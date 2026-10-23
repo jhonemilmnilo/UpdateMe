@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/data/auth_service.dart';
 import 'features/auth/presentation/login_screen.dart';
+import 'features/couple/presentation/home_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -46,82 +47,10 @@ class AuthGateway extends StatelessWidget {
       valueListenable: AuthService().currentUserNotifier,
       builder: (context, user, _) {
         if (user != null) {
-          return const HomeScreenPlaceholder();
+          return const HomeScreen();
         }
         return const LoginScreen();
       },
-    );
-  }
-}
-
-class HomeScreenPlaceholder extends StatelessWidget {
-  const HomeScreenPlaceholder({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final user = AuthService().currentUser;
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(28.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 16),
-              const Text(
-                'CONNECTED',
-                style: TextStyle(
-                  color: AppColors.supportingText,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1.5,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Welcome, ${user?.displayName ?? user?.email ?? 'User'}',
-                style: const TextStyle(
-                  color: AppColors.textHighContrast,
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              if (user?.pairCode.isNotEmpty == true) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Your Pair Code: ${user?.pairCode}',
-                  style: const TextStyle(
-                    color: AppColors.primaryAccent,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-              ],
-              const Spacer(),
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton(
-                  onPressed: () async {
-                    await AuthService().signOut();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.secondarySurface,
-                    foregroundColor: AppColors.textHighContrast,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: BorderSide(color: AppColors.glassBorder),
-                    ),
-                  ),
-                  child: const Text('Sign Out'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
