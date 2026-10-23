@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../data/auth_service.dart';
 import 'create_passcode_modal.dart';
 import 'verify_passcode_modal.dart';
@@ -38,8 +39,14 @@ class _LoginScreenState extends State<LoginScreen> {
         success = await VerifyPasscodeModal.show(context, user: user);
       }
 
-      if (success != true) {
-        debugPrint('[Auth] Passcode modal dismissed or cancelled.');
+      if (success == true) {
+        if (mounted) {
+          AppToast.success(context, 'Signed in successfully.');
+        }
+      } else {
+        if (mounted) {
+          AppToast.info(context, 'Passcode verification was canceled.');
+        }
       }
     } catch (e, stack) {
       debugPrint('[GoogleSignIn Error]: $e');
@@ -52,6 +59,7 @@ class _LoginScreenState extends State<LoginScreen> {
             _errorMessage = null;
           } else {
             _errorMessage = errorStr.replaceAll('Exception: ', '');
+            AppToast.error(context, _errorMessage!);
           }
         });
       }

@@ -37,9 +37,9 @@ class _VerifyPasscodeModalState extends State<VerifyPasscodeModal> {
   }
 
   void _onInputChanged() {
-    if (_serverError != null) {
-      setState(() => _serverError = null);
-    }
+    setState(() {
+      _serverError = null;
+    });
   }
 
   @override
@@ -281,7 +281,7 @@ class _VerifyPasscodeModalState extends State<VerifyPasscodeModal> {
                       ),
                     )
                   : const Text(
-                      'Unlock Space',
+                      'Sign In',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,

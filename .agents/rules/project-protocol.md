@@ -32,31 +32,35 @@
   - Do NOT use generic, cheesy, slang, or out-of-context words (e.g. avoid arbitrary tech jargon or mismatched metaphors).
   - Copy must sound calm, premium, modern, and intentional.
 
-## Clean Folder Architecture & Separation of Concerns (Hindi Halo-Halo)
-- **Strict Feature-First Structure**:
-  - Bawal maghalo ang unrelated code. Every feature has its own self-contained module:
-    ```text
-    lib/
-    ├── core/                  # Shared global utilities, theme tokens, constants, network clients
-    │   ├── theme/             # Color tokens, typography, app themes
-    │   ├── constants/         # Global config & keys
-    │   └── utils/             # Formatters, helpers
-    ├── features/              # Feature modules (Feature-First)
-    │   ├── auth/              # Login, Session, Google OAuth
-    │   │   ├── data/          # Supabase Auth repositories & data sources
-    │   │   └── presentation/  # Auth screens & state
-    │   ├── couple/            # Pairing, Partner connection & status
-    │   │   ├── data/
-    │   │   └── presentation/
-    │   └── widget_update/     # Photo capture, location badge, sending updates
-    │       ├── data/
-    │       └── presentation/
-    └── native_bridge/         # Android AppWidget & Kotlin MethodChannels
-    ```
-- **Separation Rules**:
-  - UI widgets do NOT talk directly to raw database queries. Use dedicated service/repository classes.
-  - Native platform code (`android/`) remains strictly organized with clear package names.
-  - Backend code is isolated in `/backend` and never bleeds into Flutter Dart folders.
+## Folder & File Structure Guidelines (Hindi Halo-Halo)
+
+Rules and standards for structuring directories and files in this project. Clean architecture, separation of concerns, at zero spaghettification.
+
+### 1. Core Principles
+- **Single Responsibility (1 Purpose = 1 File)**: Every file must have exactly one reason to change. Never combine DB calls, state, and UI in a single file.
+- **Strict File Separation**:
+  - Every screen, tab, modal, service, and data model gets its own dedicated `.dart` file.
+  - No massive "catch-all" or "god" files.
+- **Layer Isolation**: UI files only handle UI. Service files only handle business logic, APIs, and databases. Models only hold structured data.
+
+### 2. Layer Boundary Rules
+
+| Directory / Layer | What Belongs Here | What NEVER Belongs Here |
+| :--- | :--- | :--- |
+| **`models/`** | Pure Dart classes, serialization (`toJson`, `fromJson`), immutable data contracts. | Zero Flutter UI widgets, no `BuildContext`, zero DB queries. |
+| **`services/`** or **`data/`** | Supabase/Neon DB calls, API clients, secure storage, hardware interfaces. | Walang UI, zero `setState()`, no dialog popups. Return raw data or throw typed exceptions. |
+| **`views/`** or **`presentation/screens/`** | Scaffolds, layouts, tab navigation, screen-level coordination. | Long business logic, direct SQL queries, or inline 200-line forms. |
+| **`modals/`** | `showModalBottomSheet` and `showDialog` content. Form validation and input collection. | Persistent state and long-lived business logic. Return data via `Navigator.pop(context, result)`. |
+| **`widgets/`** | Reusable UI atoms (cards, badges, custom inputs, toast). Purely driven by constructor parameters. | Hardcoded state dependencies or global side-effects. |
+
+### 3. Naming Conventions
+- **File Names**: Strictly `snake_case.dart` (e.g., `auth_service.dart`, `create_passcode_modal.dart`, `app_toast.dart`).
+- **Class Names**: Strictly `PascalCase` matching the file name (e.g., `AuthService`, `CreatePasscodeModal`, `AppToast`).
+- **Feature Suffixes**:
+  - Modals: `*_modal.dart` (e.g., `create_passcode_modal.dart`)
+  - Services: `*_service.dart` (e.g., `auth_service.dart`)
+  - Views / Screens: `*_view.dart` or `*_screen.dart`
+  - Models: `*_model.dart` (e.g., `user_model.dart`)
 
 ## Diagnostic & High-Signal Error Handling Protocol
 - **No Blind Swallowing of Exceptions**:
