@@ -57,3 +57,10 @@
   - UI widgets do NOT talk directly to raw database queries. Use dedicated service/repository classes.
   - Native platform code (`android/`) remains strictly organized with clear package names.
   - Backend code is isolated in `/backend` and never bleeds into Flutter Dart folders.
+
+## Diagnostic & High-Signal Error Handling Protocol
+- **No Blind Swallowing of Exceptions**:
+  - Never silence or mask exceptions with purely generic messages without logging the underlying root cause.
+  - Always print structured tags (e.g. `[AuthService] Error: $e`) using `debugPrint`.
+  - In development/debug builds, display or log the exact root-cause message (e.g. `PlatformException`, `AuthException`, status codes) so diagnosis takes seconds rather than guessing.
+  - Surface actionable context: whether failure occurred at native SDK token retrieval or backend Supabase auth exchange.

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_theme.dart';
+import '../data/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -10,29 +11,50 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  final AuthService _authService = AuthService();
   bool _isLoadingGoogle = false;
   bool _isLoadingFacebook = false;
   String? _errorMessage;
 
-  Future<void> _signInWithProvider(OAuthProvider provider) async {
+  Future<void> _signInWithGoogle() async {
     setState(() {
-      if (provider == OAuthProvider.google) _isLoadingGoogle = true;
-      if (provider == OAuthProvider.facebook) _isLoadingFacebook = true;
+      _isLoadingGoogle = true;
       _errorMessage = null;
     });
 
     try {
-      final supabase = Supabase.instance.client;
-      await supabase.auth.signInWithOAuth(
-        provider,
-        redirectTo: 'io.supabase.updateme://login-callback',
-      );
-    } catch (e) {
+      await _authService.signInWithGoogle();
+      // On success, AuthService.currentUserNotifier updates and AuthGateway navigates automatically
+    } catch (e, stack) {
+      debugPrint('[GoogleSignIn Error]: $e');
+      debugPrint('[GoogleSignIn Stack]: $stack');
       if (mounted) {
         setState(() {
           _isLoadingGoogle = false;
+          final errorStr = e.toString();
+          if (errorStr.contains('aborted') || errorStr.contains('cancelled') || errorStr.contains('canceled')) {
+            _errorMessage = null;
+          } else {
+            _errorMessage = errorStr.replaceAll('Exception: ', '');
+          }
+        });
+      }
+    }
+  }
+
+  Future<void> _signInWithFacebook() async {
+    setState(() {
+      _isLoadingFacebook = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await _authService.signInWithOAuth(OAuthProvider.facebook);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
           _isLoadingFacebook = false;
-          _errorMessage = 'Unable to connect. Please try again.';
+          _errorMessage = 'Unable to sign in with Facebook. Please try again.';
         });
       }
     }
@@ -100,7 +122,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 width: double.infinity,
                 height: 54,
                 child: ElevatedButton(
-                  onPressed: isBusy ? null : () => _signInWithProvider(OAuthProvider.google),
+                  onPressed: isBusy ? null : _signInWithGoogle,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primaryAccent,
                     foregroundColor: AppColors.textHighContrast,
@@ -136,7 +158,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 width: double.infinity,
                 height: 54,
                 child: OutlinedButton(
-                  onPressed: isBusy ? null : () => _signInWithProvider(OAuthProvider.facebook),
+                  onPressed: isBusy ? null : _signInWithFacebook,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.textHighContrast,
                     side: BorderSide(

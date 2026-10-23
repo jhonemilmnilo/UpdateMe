@@ -27,6 +27,81 @@ app.get('/', (c) => {
   })
 })
 
+// 0. Frictionless Google Auth Sync (Neon / Supabase User Profile)
+app.post('/api/auth/google', async (c) => {
+  try {
+    const supabase = getSupabase(c)
+    const { email, displayName, avatarUrl } = await c.req.json<{
+      email: string
+      displayName?: string
+      avatarUrl?: string
+    }>()
+
+    if (!email) {
+      return c.json({ error: 'Email is required' }, 400)
+    }
+
+    const cleanEmail = email.trim().toLowerCase()
+
+    // 1. Check if user already exists
+    const { data: existingUser } = await supabase
+      .from('User')
+      .select('*, partner:User!partner_id(*)')
+      .eq('email', cleanEmail)
+      .maybeSingle()
+
+    if (existingUser) {
+      // Update profile info if changed
+      const { data: updatedUser } = await supabase
+        .from('User')
+        .update({
+          display_name: displayName || existingUser.display_name,
+          avatar_url: avatarUrl || existingUser.avatar_url,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existingUser.id)
+        .select('*, partner:User!partner_id(*)')
+        .single()
+
+      return c.json({
+        success: true,
+        user: updatedUser || existingUser
+      })
+    }
+
+    // 2. Generate unique pair code (e.g. UM-7X9B)
+    const randomHex = Math.random().toString(36).substring(2, 6).toUpperCase()
+    const pairCode = `UM-${randomHex}`
+    const username = cleanEmail.split('@')[0] + '-' + Math.floor(Math.random() * 1000)
+
+    // 3. Insert new user
+    const { data: newUser, error: insertErr } = await supabase
+      .from('User')
+      .insert({
+        id: crypto.randomUUID(),
+        email: cleanEmail,
+        username,
+        display_name: displayName || cleanEmail.split('@')[0],
+        avatar_url: avatarUrl,
+        pair_code: pairCode,
+        updated_at: new Date().toISOString()
+      })
+      .select('*, partner:User!partner_id(*)')
+      .single()
+
+    if (insertErr) {
+      return c.json({ error: insertErr.message }, 500)
+    }
+
+    return c.json({
+      success: true,
+      user: newUser
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // 1. Get or Fetch User Profile
 app.get('/api/user/:userId', async (c) => {
   try {

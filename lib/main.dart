@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/theme/app_theme.dart';
-
+import 'features/auth/data/auth_service.dart';
 import 'features/auth/presentation/login_screen.dart';
 
 Future<void> main() async {
@@ -11,11 +11,14 @@ Future<void> main() async {
   // Load environment variables (.env)
   await dotenv.load(fileName: ".env");
 
-  // Initialize Supabase client
+  // Initialize Supabase client (for storage & direct sync)
   await Supabase.initialize(
     url: dotenv.env['SUPABASE_URL'] ?? '',
     anonKey: dotenv.env['SUPABASE_ANON_KEY'] ?? '',
   );
+
+  // Initialize cached user session
+  await AuthService().initialize();
 
   runApp(const UpdateMeApp());
 }
@@ -39,11 +42,10 @@ class AuthGateway extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<AuthState>(
-      stream: Supabase.instance.client.auth.onAuthStateChange,
-      builder: (context, snapshot) {
-        final session = snapshot.data?.session ?? Supabase.instance.client.auth.currentSession;
-        if (session != null) {
+    return ValueListenableBuilder<UserModel?>(
+      valueListenable: AuthService().currentUserNotifier,
+      builder: (context, user, _) {
+        if (user != null) {
           return const HomeScreenPlaceholder();
         }
         return const LoginScreen();
@@ -57,7 +59,7 @@ class HomeScreenPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = Supabase.instance.client.auth.currentUser;
+    final user = AuthService().currentUser;
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -78,20 +80,32 @@ class HomeScreenPlaceholder extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Welcome, ${user?.userMetadata?['full_name'] ?? user?.email ?? 'User'}',
+                'Welcome, ${user?.displayName ?? user?.email ?? 'User'}',
                 style: const TextStyle(
                   color: AppColors.textHighContrast,
                   fontSize: 26,
                   fontWeight: FontWeight.bold,
                 ),
               ),
+              if (user?.pairCode.isNotEmpty == true) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Your Pair Code: ${user?.pairCode}',
+                  style: const TextStyle(
+                    color: AppColors.primaryAccent,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ],
               const Spacer(),
               SizedBox(
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
                   onPressed: () async {
-                    await Supabase.instance.client.auth.signOut();
+                    await AuthService().signOut();
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.secondarySurface,
