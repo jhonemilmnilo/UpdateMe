@@ -151,7 +151,7 @@ app.post('/api/auth/set-password', async (c) => {
   }
 })
 
-// 0.2 Verify Master Passcode
+// 0.2 Verify Master Passcode with Brute-Force Protection
 app.post('/api/auth/verify-password', async (c) => {
   try {
     const supabase = getSupabase(c)
@@ -174,10 +174,88 @@ app.post('/api/auth/verify-password', async (c) => {
       return c.json({ error: 'User not found' }, 404)
     }
 
+    const now = new Date()
+
+    // 1. Check if user was previously locked out
+    if (user.lock_until) {
+      const lockUntil = new Date(user.lock_until)
+      if (lockUntil > now) {
+        // Still locked
+        const remainingMinutes = Math.ceil((lockUntil.getTime() - now.getTime()) / (1000 * 60))
+        return c.json({
+          error: `Account locked due to too many failed attempts. Try again in ${remainingMinutes} minute${remainingMinutes > 1 ? 's' : ''}.`,
+          isLocked: true,
+          remainingMinutes,
+        }, 423)
+      } else {
+        // Lockout period has EXPIRED! Automatically reset counter and unlock
+        user.failed_attempts = 0
+        user.lock_until = null
+        await supabase
+          .from('User')
+          .update({
+            failed_attempts: 0,
+            lock_until: null,
+            updated_at: now.toISOString()
+          })
+          .eq('id', userId)
+      }
+    }
+
     const hashedInput = await hashPassword(password.trim())
 
+    // 2. Passcode Mismatch -> Increment failed_attempts & lock if threshold reached
     if (user.password !== hashedInput) {
-      return c.json({ error: 'Incorrect passcode. Please try again.' }, 401)
+      const currentAttempts = (user.failed_attempts || 0) + 1
+      const maxAttempts = 5
+
+      if (currentAttempts >= maxAttempts) {
+        const lockDurationMinutes = 15
+        const lockUntil = new Date(now.getTime() + lockDurationMinutes * 60 * 1000).toISOString()
+
+        await supabase
+          .from('User')
+          .update({
+            failed_attempts: currentAttempts,
+            lock_until: lockUntil,
+            updated_at: now.toISOString()
+          })
+          .eq('id', userId)
+
+        return c.json({
+          error: `Account locked for ${lockDurationMinutes} minutes due to ${maxAttempts} consecutive failed attempts.`,
+          isLocked: true,
+          remainingMinutes: lockDurationMinutes,
+        }, 423)
+      }
+
+      // Not locked yet, save incremented attempts
+      await supabase
+        .from('User')
+        .update({
+          failed_attempts: currentAttempts,
+          updated_at: now.toISOString()
+        })
+        .eq('id', userId)
+
+      const remainingAttempts = maxAttempts - currentAttempts
+      return c.json({
+        error: `Incorrect passcode. ${remainingAttempts} attempt${remainingAttempts > 1 ? 's' : ''} remaining.`,
+        isLocked: false,
+        remainingAttempts,
+      }, 401)
+    }
+
+    // 3. Success -> Reset failed_attempts and lock_until
+    if ((user.failed_attempts || 0) > 0 || user.lock_until != null) {
+      await supabase
+        .from('User')
+        .update({
+          failed_attempts: 0,
+          lock_until: null,
+          updated_at: now.toISOString()
+        })
+        .eq('id', userId)
     }
 
     return c.json({

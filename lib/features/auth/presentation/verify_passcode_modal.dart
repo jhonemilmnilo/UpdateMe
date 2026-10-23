@@ -28,6 +28,7 @@ class _VerifyPasscodeModalState extends State<VerifyPasscodeModal> {
   final TextEditingController _passcodeController = TextEditingController();
   bool _obscurePasscode = true;
   bool _isLoading = false;
+  bool _isLocked = false;
   String? _serverError;
 
   @override
@@ -78,9 +79,12 @@ class _VerifyPasscodeModalState extends State<VerifyPasscodeModal> {
       }
     } catch (e) {
       if (mounted) {
+        final errorMsg = e.toString().replaceAll('Exception: ', '');
+        final isAccountLocked = errorMsg.toLowerCase().contains('locked');
         setState(() {
           _isLoading = false;
-          _serverError = e.toString().replaceAll('Exception: ', '');
+          _serverError = errorMsg;
+          _isLocked = isAccountLocked;
         });
       }
     }
@@ -260,7 +264,7 @@ class _VerifyPasscodeModalState extends State<VerifyPasscodeModal> {
             width: double.infinity,
             height: 52,
             child: ElevatedButton(
-              onPressed: _isLengthValid && !_isLoading ? _handleSubmit : null,
+              onPressed: !_isLocked && _isLengthValid && !_isLoading ? _handleSubmit : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primaryAccent,
                 foregroundColor: AppColors.textHighContrast,
