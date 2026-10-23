@@ -47,3 +47,9 @@ app.*.map.json
 # Environment variables
 .env
 *.env
+.dev.vars
+
+# Node / Backend
+node_modules/
+dist/
+.wrangler/
