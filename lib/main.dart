@@ -58,8 +58,8 @@ class _ConnectionCheckScreenState extends State<ConnectionCheckScreen> {
 
     try {
       final client = Supabase.instance.client;
-      // Test query to profiles table
-      await client.from('profiles').select().limit(1);
+      // Test query to User table (which was created via Prisma)
+      await client.from('User').select().limit(1);
 
       setState(() {
         _isConnected = true;
