@@ -326,28 +326,50 @@ app.post('/api/pair', async (c) => {
   }
 })
 
-// 3. Post a Widget Update
+// 3. Post a Widget Photo Update to Partner
 app.post('/api/updates', async (c) => {
   try {
     const supabase = getSupabase(c)
-    const { senderId, imageUrl, caption, locationName } = await c.req.json<{
+    const { senderId, receiverId, imageUrl, caption, locationName, latitude, longitude } = await c.req.json<{
       senderId: string
+      receiverId?: string
       imageUrl: string
       caption?: string
       locationName?: string
+      latitude?: number
+      longitude?: number
     }>()
 
     if (!senderId || !imageUrl) {
       return c.json({ error: 'senderId and imageUrl are required' }, 400)
     }
 
+    // If receiverId not passed, look up sender's partner
+    let targetReceiverId = receiverId
+    if (!targetReceiverId) {
+      const { data: sender } = await supabase
+        .from('User')
+        .select('partner_id')
+        .eq('id', senderId)
+        .single()
+
+      if (!sender || !sender.partner_id) {
+        return c.json({ error: 'Sender does not have an active partner to receive updates.' }, 400)
+      }
+      targetReceiverId = sender.partner_id
+    }
+
     const { data: newUpdate, error } = await supabase
-      .from('widget_updates')
+      .from('Updates')
       .insert({
         sender_id: senderId,
+        receiver_id: targetReceiverId,
         image_url: imageUrl,
-        caption,
-        location_name: locationName
+        caption: caption?.slice(0, 140) || null,
+        location_name: locationName || null,
+        latitude: latitude || null,
+        longitude: longitude || null,
+        is_read: false
       })
       .select('*')
       .single()
@@ -365,8 +387,32 @@ app.post('/api/updates', async (c) => {
   }
 })
 
-// 4. Get Latest Update for Home Widget
+// 4. Get Latest Update for Home Widget (by User / Receiver ID)
 app.get('/api/updates/latest/:userId', async (c) => {
+  try {
+    const supabase = getSupabase(c)
+    const userId = c.req.param('userId')
+
+    const { data: latestUpdate, error } = await supabase
+      .from('Updates')
+      .select('*, sender:User!sender_id(id, display_name, avatar_url, username)')
+      .eq('receiver_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (error) {
+      return c.json({ error: error.message }, 500)
+    }
+
+    return c.json({ latestUpdate })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// 5. Get Updates History / Feed between couple
+app.get('/api/updates/feed/:userId', async (c) => {
   try {
     const supabase = getSupabase(c)
     const userId = c.req.param('userId')
@@ -378,18 +424,21 @@ app.get('/api/updates/latest/:userId', async (c) => {
       .single()
 
     if (!user || !user.partner_id) {
-      return c.json({ error: 'User or partner not found' }, 404)
+      return c.json({ updates: [] })
     }
 
-    const { data: latestUpdate } = await supabase
-      .from('widget_updates')
-      .select('*')
-      .eq('sender_id', user.partner_id)
+    const { data: feed, error } = await supabase
+      .from('Updates')
+      .select('*, sender:User!sender_id(id, display_name, avatar_url)')
+      .or(`and(sender_id.eq.${userId},receiver_id.eq.${user.partner_id}),and(sender_id.eq.${user.partner_id},receiver_id.eq.${userId})`)
       .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+      .limit(30)
 
-    return c.json({ latestUpdate })
+    if (error) {
+      return c.json({ error: error.message }, 500)
+    }
+
+    return c.json({ updates: feed || [] })
   } catch (error: any) {
     return c.json({ error: error.message }, 500)
   }

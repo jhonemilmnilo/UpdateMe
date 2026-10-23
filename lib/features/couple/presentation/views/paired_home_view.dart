@@ -1,8 +1,12 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/app_toast.dart';
 import '../../../auth/data/auth_service.dart';
+import '../../../updates/presentation/modals/send_update_modal.dart';
 
-class PairedHomeView extends StatelessWidget {
+class PairedHomeView extends StatefulWidget {
   final UserModel user;
 
   const PairedHomeView({
@@ -11,8 +15,46 @@ class PairedHomeView extends StatelessWidget {
   });
 
   @override
+  State<PairedHomeView> createState() => _PairedHomeViewState();
+}
+
+class _PairedHomeViewState extends State<PairedHomeView> {
+  final ImagePicker _imagePicker = ImagePicker();
+  bool _isOpeningCamera = false;
+
+  Future<void> _captureAndSendUpdate() async {
+    if (_isOpeningCamera) return;
+
+    try {
+      setState(() => _isOpeningCamera = true);
+
+      final XFile? photo = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1200,
+        maxHeight: 1200,
+        imageQuality: 80,
+      );
+
+      if (photo != null && mounted) {
+        SendUpdateModal.show(
+          context: context,
+          initialImage: File(photo.path),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        AppToast.error(context, 'Unable to open camera: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isOpeningCamera = false);
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final partnerName = user.partner?['display_name'] ?? user.partner?['email'] ?? 'Your Partner';
+    final partnerName = widget.user.partner?['display_name'] ?? widget.user.partner?['email'] ?? 'Your Partner';
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 28.0, vertical: 20.0),
@@ -61,7 +103,7 @@ class PairedHomeView extends StatelessWidget {
           ),
           const Spacer(),
 
-          // Placeholder for sending widget update photo (Next Feature!)
+          // Sending widget update photo
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(24),
@@ -98,9 +140,7 @@ class PairedHomeView extends StatelessWidget {
                   width: double.infinity,
                   height: 50,
                   child: ElevatedButton(
-                    onPressed: () {
-                      // Will connect to Photo Capture flow
-                    },
+                    onPressed: _isOpeningCamera ? null : _captureAndSendUpdate,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primaryAccent,
                       foregroundColor: AppColors.textHighContrast,
@@ -109,10 +149,19 @@ class PairedHomeView extends StatelessWidget {
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    child: const Text(
-                      'Take a Photo',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                    ),
+                    child: _isOpeningCamera
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.textHighContrast,
+                            ),
+                          )
+                        : const Text(
+                            'Take a Photo',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                          ),
                   ),
                 ),
               ],
