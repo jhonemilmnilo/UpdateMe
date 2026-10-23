@@ -102,6 +102,93 @@ app.post('/api/auth/google', async (c) => {
   }
 })
 
+// Simple SHA-256 helper with salt for password security
+async function hashPassword(password: string): Promise<string> {
+  const enc = new TextEncoder()
+  const data = enc.encode(password + ':updateme_secret_salt_2026')
+  const digest = await crypto.subtle.digest('SHA-256', data)
+  return Array.from(new Uint8Array(digest))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+// 0.1 Set / Create Master Passcode
+app.post('/api/auth/set-password', async (c) => {
+  try {
+    const supabase = getSupabase(c)
+    const { userId, password } = await c.req.json<{
+      userId: string
+      password: string
+    }>()
+
+    if (!userId || !password || password.trim().length < 4) {
+      return c.json({ error: 'Passcode must be at least 4 characters' }, 400)
+    }
+
+    const hashedPassword = await hashPassword(password.trim())
+
+    const { data: updatedUser, error } = await supabase
+      .from('User')
+      .update({
+        password: hashedPassword,
+        have_password: true,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId)
+      .select('*, partner:User!partner_id(*)')
+      .single()
+
+    if (error || !updatedUser) {
+      return c.json({ error: error?.message || 'Failed to update passcode' }, 500)
+    }
+
+    return c.json({
+      success: true,
+      user: updatedUser
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// 0.2 Verify Master Passcode
+app.post('/api/auth/verify-password', async (c) => {
+  try {
+    const supabase = getSupabase(c)
+    const { userId, password } = await c.req.json<{
+      userId: string
+      password: string
+    }>()
+
+    if (!userId || !password) {
+      return c.json({ error: 'User ID and passcode are required' }, 400)
+    }
+
+    const { data: user, error } = await supabase
+      .from('User')
+      .select('*, partner:User!partner_id(*)')
+      .eq('id', userId)
+      .single()
+
+    if (error || !user) {
+      return c.json({ error: 'User not found' }, 404)
+    }
+
+    const hashedInput = await hashPassword(password.trim())
+
+    if (user.password !== hashedInput) {
+      return c.json({ error: 'Incorrect passcode. Please try again.' }, 401)
+    }
+
+    return c.json({
+      success: true,
+      user
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // 1. Get or Fetch User Profile
 app.get('/api/user/:userId', async (c) => {
   try {

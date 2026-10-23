@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_theme.dart';
 import '../data/auth_service.dart';
+import 'create_passcode_modal.dart';
+import 'verify_passcode_modal.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -13,7 +14,6 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final AuthService _authService = AuthService();
   bool _isLoadingGoogle = false;
-  bool _isLoadingFacebook = false;
   String? _errorMessage;
 
   Future<void> _signInWithGoogle() async {
@@ -23,8 +23,24 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      await _authService.signInWithGoogle();
-      // On success, AuthService.currentUserNotifier updates and AuthGateway navigates automatically
+      final user = await _authService.signInWithGoogle();
+
+      if (!mounted) return;
+      setState(() => _isLoadingGoogle = false);
+
+      // Clean separated modal flow:
+      // If havePassword is false -> Open dedicated CreatePasscodeModal
+      // If havePassword is true -> Open dedicated VerifyPasscodeModal
+      final bool? success;
+      if (!user.havePassword) {
+        success = await CreatePasscodeModal.show(context, user: user);
+      } else {
+        success = await VerifyPasscodeModal.show(context, user: user);
+      }
+
+      if (success != true) {
+        debugPrint('[Auth] Passcode modal dismissed or cancelled.');
+      }
     } catch (e, stack) {
       debugPrint('[GoogleSignIn Error]: $e');
       debugPrint('[GoogleSignIn Stack]: $stack');
@@ -42,27 +58,9 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  Future<void> _signInWithFacebook() async {
-    setState(() {
-      _isLoadingFacebook = true;
-      _errorMessage = null;
-    });
-
-    try {
-      await _authService.signInWithOAuth(OAuthProvider.facebook);
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoadingFacebook = false;
-          _errorMessage = 'Unable to sign in with Facebook. Please try again.';
-        });
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final isBusy = _isLoadingGoogle || _isLoadingFacebook;
+    final isBusy = _isLoadingGoogle;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -142,43 +140,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         )
                       : const Text(
                           'Continue with Google',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: -0.2,
-                          ),
-                        ),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Secondary Action: Continue with Facebook (Minimalist border, No Icons)
-              SizedBox(
-                width: double.infinity,
-                height: 54,
-                child: OutlinedButton(
-                  onPressed: isBusy ? null : _signInWithFacebook,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.textHighContrast,
-                    side: BorderSide(
-                      color: AppColors.supportingText.withValues(alpha: 0.35),
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  child: _isLoadingFacebook
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: AppColors.textHighContrast,
-                          ),
-                        )
-                      : const Text(
-                          'Continue with Facebook',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,

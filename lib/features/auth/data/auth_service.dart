@@ -12,6 +12,7 @@ class UserModel {
   final String? avatarUrl;
   final String pairCode;
   final String? partnerId;
+  final bool havePassword;
   final Map<String, dynamic>? partner;
 
   UserModel({
@@ -22,6 +23,7 @@ class UserModel {
     this.avatarUrl,
     required this.pairCode,
     this.partnerId,
+    this.havePassword = false,
     this.partner,
   });
 
@@ -41,6 +43,7 @@ class UserModel {
       avatarUrl: json['avatar_url'] as String?,
       pairCode: json['pair_code'] as String? ?? '',
       partnerId: json['partner_id'] as String?,
+      havePassword: json['have_password'] as bool? ?? false,
       partner: partnerMap,
     );
   }
@@ -54,6 +57,7 @@ class UserModel {
       'avatar_url': avatarUrl,
       'pair_code': pairCode,
       'partner_id': partnerId,
+      'have_password': havePassword,
       'partner': partner,
     };
   }
@@ -132,12 +136,64 @@ class AuthService {
     }
 
     final user = UserModel.fromJson(data['user'] as Map<String, dynamic>);
+    return user;
+  }
 
-    // 4. Cache user locally
+  /// Complete login session after password setup or verification
+  Future<void> activateUserSession(UserModel user) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefUserKey, jsonEncode(user.toJson()));
-
     currentUserNotifier.value = user;
+    debugPrint('[AuthService] Activated session for: ${user.email}');
+  }
+
+  /// Set Master Passcode for first-time user
+  Future<UserModel> setMasterPasscode({
+    required String userId,
+    required String password,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$_backendBaseUrl/api/auth/set-password'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'userId': userId,
+        'password': password,
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      final err = jsonDecode(response.body);
+      throw Exception(err['error'] ?? 'Failed to set passcode.');
+    }
+
+    final data = jsonDecode(response.body);
+    final user = UserModel.fromJson(data['user'] as Map<String, dynamic>);
+    await activateUserSession(user);
+    return user;
+  }
+
+  /// Verify Master Passcode for returning user
+  Future<UserModel> verifyMasterPasscode({
+    required String userId,
+    required String password,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$_backendBaseUrl/api/auth/verify-password'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'userId': userId,
+        'password': password,
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      final err = jsonDecode(response.body);
+      throw Exception(err['error'] ?? 'Incorrect passcode.');
+    }
+
+    final data = jsonDecode(response.body);
+    final user = UserModel.fromJson(data['user'] as Map<String, dynamic>);
+    await activateUserSession(user);
     return user;
   }
 
