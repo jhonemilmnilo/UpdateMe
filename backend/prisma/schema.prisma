@@ -9,32 +9,39 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-model Profile {
-  id          String   @id @default(uuid())
-  username    String   @unique
-  displayName String?  @map("display_name")
-  avatarUrl   String?  @map("avatar_url")
-  pairCode    String   @unique @map("pair_code")
-  fcmToken    String?  @map("fcm_token")
-  partnerId   String?  @map("partner_id")
-  createdAt   DateTime @default(now()) @map("created_at")
+/// User table linked 1-to-1 with auth.users (Google OAuth & Profile credentials)
+model User {
+  id             String    @id @db.Uuid
+  email          String    @unique
+  username       String    @unique
+  displayName    String?   @map("display_name")
+  avatarUrl      String?   @map("avatar_url")
+  pairCode       String    @unique @map("pair_code")
+  partnerId      String?   @map("partner_id") @db.Uuid
+  fcmToken       String?   @map("fcm_token")
+  password       String?
+  havePassword   Boolean   @default(false) @map("have_password")
+  failedAttempts Int       @default(0) @map("failed_attempts")
+  lockUntil      DateTime? @map("lock_until")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at")
 
-  partner       Profile?       @relation("CouplePair", fields: [partnerId], references: [id])
-  pairedBy      Profile[]      @relation("CouplePair")
+  partner       User?          @relation("CouplePair", fields: [partnerId], references: [id], onDelete: SetNull)
+  pairedBy      User[]         @relation("CouplePair")
   widgetUpdates WidgetUpdate[]
 
-  @@map("profiles")
+  @@map("User")
 }
 
 model WidgetUpdate {
-  id           String   @id @default(uuid())
-  senderId     String   @map("sender_id")
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  senderId     String   @map("sender_id") @db.Uuid
   imageUrl     String   @map("image_url")
   caption      String?
   locationName String?  @map("location_name")
   createdAt    DateTime @default(now()) @map("created_at")
 
-  sender Profile @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  sender User @relation(fields: [senderId], references: [id], onDelete: Cascade)
 
   @@map("widget_updates")
 }
