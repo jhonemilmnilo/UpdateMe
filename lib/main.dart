@@ -3,6 +3,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/theme/app_theme.dart';
 
+import 'features/auth/presentation/login_screen.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -24,10 +26,88 @@ class UpdateMeApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Update Me',
+      title: 'UpdateMe',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.stormCloudTheme,
-      home: const ConnectionCheckScreen(),
+      home: const AuthGateway(),
+    );
+  }
+}
+
+class AuthGateway extends StatelessWidget {
+  const AuthGateway({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<AuthState>(
+      stream: Supabase.instance.client.auth.onAuthStateChange,
+      builder: (context, snapshot) {
+        final session = snapshot.data?.session ?? Supabase.instance.client.auth.currentSession;
+        if (session != null) {
+          return const HomeScreenPlaceholder();
+        }
+        return const LoginScreen();
+      },
+    );
+  }
+}
+
+class HomeScreenPlaceholder extends StatelessWidget {
+  const HomeScreenPlaceholder({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final user = Supabase.instance.client.auth.currentUser;
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(28.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 16),
+              const Text(
+                'CONNECTED',
+                style: TextStyle(
+                  color: AppColors.supportingText,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Welcome, ${user?.userMetadata?['full_name'] ?? user?.email ?? 'User'}',
+                style: const TextStyle(
+                  color: AppColors.textHighContrast,
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    await Supabase.instance.client.auth.signOut();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.secondarySurface,
+                    foregroundColor: AppColors.textHighContrast,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(color: AppColors.glassBorder),
+                    ),
+                  ),
+                  child: const Text('Sign Out'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
