@@ -23,21 +23,17 @@ class AppToast {
     final overlay = Overlay.maybeOf(context);
     if (overlay == null) return;
 
-    final Color badgeColor;
-    final String badgeText;
+    final Color accentColor;
 
     switch (type) {
       case ToastType.success:
-        badgeColor = const Color(0xFF81C784); // Soft Green
-        badgeText = 'SUCCESS';
+        accentColor = const Color(0xFF81C784); // Soft Green
         break;
       case ToastType.error:
-        badgeColor = const Color(0xFFEF9A9A); // Soft Red
-        badgeText = 'NOTICE';
+        accentColor = const Color(0xFFEF9A9A); // Soft Red
         break;
       case ToastType.info:
-        badgeColor = AppColors.supportingText;
-        badgeText = 'UPDATE';
+        accentColor = AppColors.supportingText;
         break;
     }
 
@@ -45,8 +41,7 @@ class AppToast {
     entry = OverlayEntry(
       builder: (context) => _TopToastWidget(
         message: message,
-        badgeText: badgeText,
-        badgeColor: badgeColor,
+        accentColor: accentColor,
         duration: duration,
         onDismissed: () {
           if (_currentEntry == entry) {
@@ -76,15 +71,13 @@ class AppToast {
 
 class _TopToastWidget extends StatefulWidget {
   final String message;
-  final String badgeText;
-  final Color badgeColor;
+  final Color accentColor;
   final Duration duration;
   final VoidCallback onDismissed;
 
   const _TopToastWidget({
     required this.message,
-    required this.badgeText,
-    required this.badgeColor,
+    required this.accentColor,
     required this.duration,
     required this.onDismissed,
   });
@@ -154,56 +147,35 @@ class _TopToastWidgetState extends State<_TopToastWidget>
           position: _offsetAnimation,
           child: FadeTransition(
             opacity: _fadeAnimation,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-              decoration: BoxDecoration(
-                color: AppColors.secondarySurface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: AppColors.supportingText.withValues(alpha: 0.25),
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                decoration: BoxDecoration(
+                  color: AppColors.secondarySurface,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: widget.accentColor.withValues(alpha: 0.35),
+                    width: 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.35),
-                    blurRadius: 20,
-                    offset: const Offset(0, 10),
+                child: Text(
+                  widget.message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppColors.textHighContrast,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    height: 1.35,
+                    letterSpacing: -0.1,
                   ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Minimalist Status Badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: widget.badgeColor.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      widget.badgeText,
-                      style: TextStyle(
-                        color: widget.badgeColor,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.0,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  // Message
-                  Expanded(
-                    child: Text(
-                      widget.message,
-                      style: const TextStyle(
-                        color: AppColors.textHighContrast,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        height: 1.3,
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),

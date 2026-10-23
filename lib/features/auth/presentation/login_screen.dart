@@ -41,11 +41,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (success == true) {
         if (mounted) {
-          AppToast.success(context, 'Signed in successfully.');
+          AppToast.success(context, 'You have successfully signed in.');
         }
       } else {
         if (mounted) {
-          AppToast.info(context, 'Passcode verification was canceled.');
+          AppToast.info(context, 'Sign in was canceled.');
         }
       }
     } catch (e, stack) {
