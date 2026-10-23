@@ -4,7 +4,11 @@ import 'package:image_picker/image_picker.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../auth/data/auth_service.dart';
+import '../../../updates/data/update_model.dart';
+import '../../../updates/data/update_service.dart';
 import '../../../updates/presentation/modals/send_update_modal.dart';
+import '../../../updates/presentation/widgets/daily_moments_carousel.dart';
+import '../../../updates/presentation/widgets/moments_tab_bar.dart';
 
 class PairedHomeView extends StatefulWidget {
   final UserModel user;
@@ -20,7 +24,47 @@ class PairedHomeView extends StatefulWidget {
 
 class _PairedHomeViewState extends State<PairedHomeView> {
   final ImagePicker _imagePicker = ImagePicker();
+  final UpdateService _updateService = UpdateService();
+
+  int _selectedTabIndex = 0; // 0: From Partner, 1: Sent Moments
+  bool _isLoadingMoments = true;
+  List<UpdateModel> _receivedMoments = [];
+  List<UpdateModel> _sentMoments = [];
   bool _isOpeningCamera = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTodayMoments();
+  }
+
+  Future<void> _loadTodayMoments() async {
+    try {
+      setState(() => _isLoadingMoments = true);
+
+      final received = await _updateService.getTodayUpdates(
+        userId: widget.user.id,
+        type: 'received',
+      );
+
+      final sent = await _updateService.getTodayUpdates(
+        userId: widget.user.id,
+        type: 'sent',
+      );
+
+      if (mounted) {
+        setState(() {
+          _receivedMoments = received;
+          _sentMoments = sent;
+          _isLoadingMoments = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingMoments = false);
+      }
+    }
+  }
 
   Future<void> _captureAndSendUpdate() async {
     if (_isOpeningCamera) return;
@@ -39,6 +83,9 @@ class _PairedHomeViewState extends State<PairedHomeView> {
         SendUpdateModal.show(
           context: context,
           initialImage: File(photo.path),
+          onUpdateSent: () {
+            _loadTodayMoments();
+          },
         );
       }
     } catch (e) {
@@ -55,78 +102,107 @@ class _PairedHomeViewState extends State<PairedHomeView> {
   @override
   Widget build(BuildContext context) {
     final partnerName = widget.user.partner?['display_name'] ?? widget.user.partner?['email'] ?? 'Your Partner';
+    final currentList = _selectedTabIndex == 0 ? _receivedMoments : _sentMoments;
+    final emptyMessage = _selectedTabIndex == 0
+        ? 'No updates received from $partnerName yet today.'
+        : 'You haven’t sent any moments today yet.';
 
-    return Padding(
-      padding: const EdgeInsets.only(left: 28.0, right: 28.0, top: 8.0, bottom: 20.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Paired with\n$partnerName',
-            style: const TextStyle(
-              color: AppColors.textHighContrast,
-              fontSize: 32,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.6,
-              height: 1.2,
+    return RefreshIndicator(
+      onRefresh: _loadTodayMoments,
+      color: AppColors.primaryAccent,
+      backgroundColor: AppColors.secondarySurface,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.only(left: 24.0, right: 24.0, top: 8.0, bottom: 20.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header Typography
+            Text(
+              'Paired with\n$partnerName',
+              style: const TextStyle(
+                color: AppColors.textHighContrast,
+                fontSize: 30,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.6,
+                height: 1.2,
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
+            const SizedBox(height: 16),
 
-          const Text(
-            'Your home screen widgets are actively linked. Ready to send moments.',
-            style: TextStyle(
-              color: AppColors.supportingText,
-              fontSize: 14,
-              height: 1.4,
+            // Professional Moments Tab Bar (From Partner | Sent Moments)
+            MomentsTabBar(
+              selectedIndex: _selectedTabIndex,
+              onTabSelected: (index) {
+                setState(() => _selectedTabIndex = index);
+              },
             ),
-          ),
-          const Spacer(),
+            const SizedBox(height: 16),
 
-          // Minimalist Floating Camera Action Button (Bottom-Right, 78x78 Flagship)
-          Align(
-            alignment: Alignment.bottomRight,
-            child: GestureDetector(
-              onTap: _isOpeningCamera ? null : _captureAndSendUpdate,
-              child: Container(
-                width: 78,
-                height: 78,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.primaryAccent,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.35),
-                      blurRadius: 18,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                  border: Border.all(
-                    color: AppColors.secondarySurface,
-                    width: 4,
+            // Daily Carousel Area
+            if (_isLoadingMoments)
+              const SizedBox(
+                height: 320,
+                child: Center(
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.primaryAccent,
                   ),
                 ),
-                child: Center(
-                  child: _isOpeningCamera
-                      ? const SizedBox(
-                          width: 26,
-                          height: 26,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
+              )
+            else
+              DailyMomentsCarousel(
+                updates: currentList,
+                emptyMessage: emptyMessage,
+              ),
+
+            const SizedBox(height: 24),
+
+            // Minimalist Floating Camera Action Button (Bottom-Right, 78x78 Flagship)
+            Align(
+              alignment: Alignment.bottomRight,
+              child: GestureDetector(
+                onTap: _isOpeningCamera ? null : _captureAndSendUpdate,
+                child: Container(
+                  width: 76,
+                  height: 76,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.primaryAccent,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.35),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                    border: Border.all(
+                      color: AppColors.secondarySurface,
+                      width: 4,
+                    ),
+                  ),
+                  child: Center(
+                    child: _isOpeningCamera
+                        ? const SizedBox(
+                            width: 26,
+                            height: 26,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              color: AppColors.textHighContrast,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.camera_alt_rounded,
                             color: AppColors.textHighContrast,
+                            size: 36,
                           ),
-                        )
-                      : const Icon(
-                          Icons.camera_alt_rounded,
-                          color: AppColors.textHighContrast,
-                          size: 38,
-                        ),
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 14),
-        ],
+            const SizedBox(height: 14),
+          ],
+        ),
       ),
     );
   }

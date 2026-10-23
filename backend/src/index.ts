@@ -444,4 +444,39 @@ app.get('/api/updates/feed/:userId', async (c) => {
   }
 })
 
+// 6. Get Today's Moments (Strictly filtered to current date, received vs sent)
+app.get('/api/updates/today/:userId', async (c) => {
+  try {
+    const supabase = getSupabase(c)
+    const userId = c.req.param('userId')
+    const type = c.req.query('type') || 'received' // 'received' (From Partner) or 'sent' (Sent Moments)
+
+    // Calculate Start of Today in UTC
+    const now = new Date()
+    const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString()
+
+    let query = supabase
+      .from('Updates')
+      .select('*, sender:User!sender_id(id, display_name, avatar_url, username)')
+      .gte('created_at', startOfToday)
+      .order('created_at', { ascending: true }) // chronological order for carousel stories
+
+    if (type === 'sent') {
+      query = query.eq('sender_id', userId)
+    } else {
+      query = query.eq('receiver_id', userId)
+    }
+
+    const { data: updates, error } = await query
+
+    if (error) {
+      return c.json({ error: error.message }, 500)
+    }
+
+    return c.json({ updates: updates || [] })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 export default app

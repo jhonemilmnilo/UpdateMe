@@ -192,4 +192,22 @@ class UpdateService {
     if (data['latestUpdate'] == null) return null;
     return UpdateModel.fromJson(data['latestUpdate']);
   }
+
+  /// Fetch today's moments (strictly current date in UTC, filtered by type: 'received' or 'sent')
+  Future<List<UpdateModel>> getTodayUpdates({
+    required String userId,
+    required String type, // 'received' or 'sent'
+  }) async {
+    final response = await http.get(
+      Uri.parse('$_backendBaseUrl/api/updates/today/$userId?type=$type'),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load today moments');
+    }
+
+    final data = jsonDecode(response.body);
+    final List list = data['updates'] ?? [];
+    return list.map((item) => UpdateModel.fromJson(item)).toList();
+  }
 }
