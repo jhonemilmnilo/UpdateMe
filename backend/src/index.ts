@@ -357,7 +357,7 @@ app.post('/api/pair', async (c) => {
 app.post('/api/updates', async (c) => {
   try {
     const supabase = getSupabase(c)
-    const { senderId, receiverId, imageUrl, caption, locationName, latitude, longitude } = await c.req.json<{
+    const { senderId, receiverId, imageUrl, caption, locationName, latitude, longitude, createdAt, id } = await c.req.json<{
       senderId: string
       receiverId?: string
       imageUrl: string
@@ -365,10 +365,27 @@ app.post('/api/updates', async (c) => {
       locationName?: string
       latitude?: number
       longitude?: number
+      createdAt?: string
+      id?: string
     }>()
 
     if (!senderId || !imageUrl) {
       return c.json({ error: 'senderId and imageUrl are required' }, 400)
+    }
+
+    // Preserve offline capture timestamp with bounds checking (not > 10m future, not > 48h past)
+    const now = new Date()
+    let finalCreatedAt = now.toISOString()
+    if (createdAt) {
+      const parsed = Date.parse(createdAt)
+      if (!isNaN(parsed)) {
+        const clientDate = new Date(parsed)
+        const diffMs = now.getTime() - clientDate.getTime()
+        // If not more than 10 mins in the future and not older than 48 hours
+        if (diffMs > -10 * 60 * 1000 && diffMs < 48 * 60 * 60 * 1000) {
+          finalCreatedAt = clientDate.toISOString()
+        }
+      }
     }
 
     // If receiverId not passed, look up sender's partner
@@ -386,18 +403,25 @@ app.post('/api/updates', async (c) => {
       targetReceiverId = sender.partner_id
     }
 
+    const insertPayload: any = {
+      sender_id: senderId,
+      receiver_id: targetReceiverId,
+      image_url: imageUrl,
+      caption: caption?.slice(0, 140) || null,
+      location_name: locationName || null,
+      latitude: latitude || null,
+      longitude: longitude || null,
+      created_at: finalCreatedAt,
+      is_read: false
+    }
+
+    if (id) {
+      insertPayload.id = id
+    }
+
     const { data: newUpdate, error } = await supabase
       .from('Updates')
-      .insert({
-        sender_id: senderId,
-        receiver_id: targetReceiverId,
-        image_url: imageUrl,
-        caption: caption?.slice(0, 140) || null,
-        location_name: locationName || null,
-        latitude: latitude || null,
-        longitude: longitude || null,
-        is_read: false
-      })
+      .upsert(insertPayload, { onConflict: 'id' })
       .select('*')
       .single()
 
@@ -425,7 +449,7 @@ app.post('/api/updates', async (c) => {
         const pushPromise = sendPushNotification({
           token: receiver.fcm_token,
           title: 'UpdateMe 📸',
-          body: caption ? `${senderDisplayName}: "${caption}"` : `${senderDisplayName} posted a new moment!`,
+          body: caption ? `${senderDisplayName}: "${caption}"` : `${senderDisplayName} posted a new update!`,
           data: {
             type: 'new_moment',
             updateId: newUpdate.id,

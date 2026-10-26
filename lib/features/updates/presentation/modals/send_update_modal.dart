@@ -4,6 +4,8 @@ import 'package:image_picker/image_picker.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../auth/data/auth_service.dart';
+import '../../data/outbox_service.dart';
+import '../../data/sync_engine.dart';
 import '../../data/update_service.dart';
 
 class SendUpdateModal extends StatefulWidget {
@@ -101,29 +103,34 @@ class _SendUpdateModalState extends State<SendUpdateModal> {
     setState(() => _isSending = true);
 
     try {
-      // 1. Upload compressed image to Supabase Storage
-      final publicUrl = await _updateService.uploadUpdatePhoto(
-        imageFile: _currentImage,
-        userId: currentUser.id,
-      );
+      final now = DateTime.now();
+      // Generate standard RFC 4122 UUID v4 matching PostgreSQL UUID type
+      final updateId = OutboxService.newUuid();
 
-      // 2. Post record to Cloudflare Worker backend
-      await _updateService.sendUpdate(
+      // 1. Instantly save to local outbox (captures exact local time)
+      await OutboxService().enqueue(
+        id: updateId,
         senderId: currentUser.id,
-        imageUrl: publicUrl,
+        originalImageFile: _currentImage,
         caption: _captionController.text.trim().isNotEmpty
             ? _captionController.text.trim()
             : null,
         locationName: _detectedLocation,
         latitude: _latitude,
         longitude: _longitude,
+        createdAt: now,
       );
 
       if (mounted) {
         Navigator.of(context).pop();
-        AppToast.success(context, 'Update sent to partner’s home screen.');
+        AppToast.success(context, 'Update saved! Sending to partner...');
         widget.onUpdateSent?.call();
       }
+
+      // 2. Fire and forget sync engine in background
+      SyncEngine().processQueue(onSyncComplete: () {
+        widget.onUpdateSent?.call();
+      });
     } catch (e) {
       if (mounted) {
         setState(() => _isSending = false);

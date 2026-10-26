@@ -138,6 +138,8 @@ class UpdateService {
     String? locationName,
     double? latitude,
     double? longitude,
+    DateTime? createdAt,
+    String? id,
   }) async {
     final response = await http.post(
       Uri.parse('$_backendBaseUrl/api/updates'),
@@ -150,6 +152,8 @@ class UpdateService {
         'locationName': locationName,
         'latitude': latitude,
         'longitude': longitude,
+        if (createdAt != null) 'createdAt': createdAt.toUtc().toIso8601String(),
+        if (id != null) 'id': id,
       }),
     );
 

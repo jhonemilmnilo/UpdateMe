@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -184,28 +185,42 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
           fit: StackFit.expand,
           children: [
             // Background Moment Image
-            CachedNetworkImage(
-              imageUrl: update.imageUrl,
-              fit: BoxFit.cover,
-              placeholder: (context, url) => Container(
-                color: AppColors.secondarySurface,
-                child: const Center(
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.primaryAccent,
+            update.isLocalImage
+                ? Image.file(
+                    File(update.imageUrl),
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      color: AppColors.secondarySurface,
+                      child: const Center(
+                        child: Text(
+                          'Local image not found',
+                          style: TextStyle(color: AppColors.supportingText, fontSize: 13),
+                        ),
+                      ),
+                    ),
+                  )
+                : CachedNetworkImage(
+                    imageUrl: update.imageUrl,
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) => Container(
+                      color: AppColors.secondarySurface,
+                      child: const Center(
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.primaryAccent,
+                        ),
+                      ),
+                    ),
+                    errorWidget: (context, url, error) => Container(
+                      color: AppColors.secondarySurface,
+                      child: const Center(
+                        child: Text(
+                          'Unable to load moment',
+                          style: TextStyle(color: AppColors.supportingText, fontSize: 13),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              errorWidget: (context, url, error) => Container(
-                color: AppColors.secondarySurface,
-                child: const Center(
-                  child: Text(
-                    'Unable to load moment',
-                    style: TextStyle(color: AppColors.supportingText, fontSize: 13),
-                  ),
-                ),
-              ),
-            ),
 
             // Top Subtle Vignette for Badge & Story Bar Legibility
             Positioned(
@@ -402,9 +417,13 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
                   Row(
                     children: [
                       Text(
-                        'Received $formattedTime',
+                        update.isPending
+                            ? 'Saved $formattedTime (Syncing...)'
+                            : (isSender ? 'Sent $formattedTime' : 'Received $formattedTime'),
                         style: TextStyle(
-                          color: AppColors.supportingText.withValues(alpha: 0.85),
+                          color: update.isPending
+                              ? const Color(0xFFE5A93C)
+                              : AppColors.supportingText.withValues(alpha: 0.85),
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
                         ),
@@ -415,7 +434,9 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
                         height: 5,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: AppColors.primaryAccent.withValues(alpha: 0.8),
+                          color: update.isPending
+                              ? const Color(0xFFE5A93C)
+                              : AppColors.primaryAccent.withValues(alpha: 0.8),
                         ),
                       ),
                     ],

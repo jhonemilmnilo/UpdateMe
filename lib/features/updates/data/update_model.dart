@@ -11,6 +11,7 @@ class UpdateModel {
   final bool isReacted;
   final DateTime createdAt;
   final Map<String, dynamic>? sender;
+  final bool isPending;
 
   const UpdateModel({
     required this.id,
@@ -25,7 +26,10 @@ class UpdateModel {
     this.isReacted = false,
     required this.createdAt,
     this.sender,
+    this.isPending = false,
   });
+
+  bool get isLocalImage => !imageUrl.startsWith('http');
 
   factory UpdateModel.fromJson(Map<String, dynamic> json) {
     return UpdateModel(
@@ -57,6 +61,7 @@ class UpdateModel {
     bool? isReacted,
     DateTime? createdAt,
     Map<String, dynamic>? sender,
+    bool? isPending,
   }) {
     return UpdateModel(
       id: id ?? this.id,
@@ -71,6 +76,7 @@ class UpdateModel {
       isReacted: isReacted ?? this.isReacted,
       createdAt: createdAt ?? this.createdAt,
       sender: sender ?? this.sender,
+      isPending: isPending ?? this.isPending,
     );
   }
 

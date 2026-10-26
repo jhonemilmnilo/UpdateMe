@@ -5,6 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../auth/data/auth_service.dart';
+import '../../../updates/data/outbox_service.dart';
+import '../../../updates/data/sync_engine.dart';
 import '../../../updates/data/update_model.dart';
 import '../../../updates/data/update_service.dart';
 import '../../../updates/data/widget_sync_service.dart';
@@ -41,20 +43,30 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    SyncEngine().pendingItemsNotifier.addListener(_onPendingItemsChanged);
     _loadTodayMoments();
     _subscribeToRealtimeUpdates();
+    SyncEngine().processQueue();
+  }
+
+  void _onPendingItemsChanged() {
+    if (mounted) {
+      _loadTodayMoments(isBackgroundSync: true);
+    }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      debugPrint('[PairedHomeView] App resumed. Re-fetching moments & syncing widget...');
+      debugPrint('[PairedHomeView] App resumed. Re-fetching moments & draining outbox...');
+      SyncEngine().processQueue();
       _loadTodayMoments(isBackgroundSync: true);
     }
   }
 
   @override
   void dispose() {
+    SyncEngine().pendingItemsNotifier.removeListener(_onPendingItemsChanged);
     WidgetsBinding.instance.removeObserver(this);
     _updatesChannel?.unsubscribe();
     super.dispose();
@@ -93,25 +105,66 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
   }
 
   Future<void> _loadTodayMoments({bool isBackgroundSync = false}) async {
-    try {
-      if (!isBackgroundSync) {
-        setState(() => _isLoadingMoments = true);
-      }
+    if (!isBackgroundSync && mounted) {
+      setState(() => _isLoadingMoments = true);
+    }
 
+    // 1. FIRST: Always load local pending outbox items immediately (100% offline-safe)
+    List<UpdateModel> localPendingMoments = [];
+    Set<String> pendingIds = {};
+    try {
+      final pendingOutbox = await OutboxService().getPendingItems();
+      localPendingMoments = pendingOutbox.map((item) => UpdateModel(
+        id: item.id,
+        senderId: item.senderId,
+        receiverId: item.receiverId ?? '',
+        imageUrl: item.localImagePath,
+        caption: item.caption,
+        locationName: item.locationName,
+        latitude: item.latitude,
+        longitude: item.longitude,
+        isRead: false,
+        isReacted: false,
+        createdAt: item.createdAt,
+        isPending: true,
+      )).toList();
+      pendingIds = pendingOutbox.map((e) => e.id).toSet();
+
+      // Immediately render local outbox moments if we have any or if currently offline
+      if (mounted) {
+        setState(() {
+          final existingRemoteSent = _sentMoments.where((m) => !m.isPending && !pendingIds.contains(m.id)).toList();
+          final immediateSent = [...existingRemoteSent, ...localPendingMoments];
+          immediateSent.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+          _sentMoments = immediateSent;
+        });
+      }
+    } catch (e) {
+      debugPrint('[PairedHomeView] Error loading local outbox moments: $e');
+    }
+
+    // 2. SECOND: Attempt remote network fetch (degrades gracefully if offline or no signal)
+    try {
       final received = await _updateService.getTodayUpdates(
         userId: widget.user.id,
         type: 'received',
       );
 
-      final sent = await _updateService.getTodayUpdates(
+      final remoteSent = await _updateService.getTodayUpdates(
         userId: widget.user.id,
         type: 'sent',
       );
 
+      final mergedSent = [
+        ...remoteSent.where((m) => !pendingIds.contains(m.id)),
+        ...localPendingMoments,
+      ];
+      mergedSent.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
       if (mounted) {
         setState(() {
           _receivedMoments = received;
-          _sentMoments = sent;
+          _sentMoments = mergedSent;
           _isLoadingMoments = false;
         });
 
@@ -123,6 +176,7 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
         }
       }
     } catch (e) {
+      debugPrint('[PairedHomeView] Remote fetch skipped or offline: $e');
       if (mounted) {
         setState(() => _isLoadingMoments = false);
       }
