@@ -118,11 +118,24 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
         // Automatically update the Android Home Screen Widget with today's received moments
         if (_receivedMoments.isNotEmpty) {
           _widgetSyncService.syncMomentsListToWidget(moments: _receivedMoments);
+        } else {
+          _widgetSyncService.clearWidget();
         }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoadingMoments = false);
+      }
+    }
+  }
+
+  Future<void> _requestPinWidget() async {
+    final success = await _widgetSyncService.requestPinWidget();
+    if (mounted) {
+      if (success) {
+        AppToast.success(context, 'Widget added to Home screen!');
+      } else {
+        AppToast.info(context, 'Press and hold your home screen to add the UpdateMe widget.');
       }
     }
   }
@@ -234,47 +247,90 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
           ),
         ),
 
-        // Pinned Bottom-Right Floating Camera Button
+        // Floating Action Row (Add Widget on Left, Camera on Right)
         Positioned(
           bottom: 24,
+          left: 24,
           right: 24,
-          child: GestureDetector(
-            onTap: _isOpeningCamera ? null : _captureAndSendUpdate,
-            child: Container(
-              width: 76,
-              height: 76,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.primaryAccent,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.4),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              // Minimalist Pill: Add Widget
+              GestureDetector(
+                onTap: _requestPinWidget,
+                child: Container(
+                  height: 48,
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  decoration: BoxDecoration(
+                    color: AppColors.secondarySurface,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: AppColors.primaryAccent.withValues(alpha: 0.35),
+                      width: 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        blurRadius: 14,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
                   ),
-                ],
-                border: Border.all(
-                  color: AppColors.secondarySurface,
-                  width: 4,
+                  child: const Center(
+                    child: Text(
+                      'add widget',
+                      style: TextStyle(
+                        color: AppColors.textHighContrast,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ),
                 ),
               ),
-              child: Center(
-                child: _isOpeningCamera
-                    ? const SizedBox(
-                        width: 26,
-                        height: 26,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          color: AppColors.textHighContrast,
-                        ),
-                      )
-                    : const Icon(
-                        Icons.camera_alt_rounded,
-                        color: AppColors.textHighContrast,
-                        size: 36,
+
+              // Pinned Bottom-Right Floating Camera Button
+              GestureDetector(
+                onTap: _isOpeningCamera ? null : _captureAndSendUpdate,
+                child: Container(
+                  width: 76,
+                  height: 76,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.primaryAccent,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.4),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
                       ),
+                    ],
+                    border: Border.all(
+                      color: AppColors.secondarySurface,
+                      width: 4,
+                    ),
+                  ),
+                  child: Center(
+                    child: _isOpeningCamera
+                        ? const SizedBox(
+                            width: 26,
+                            height: 26,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              color: AppColors.textHighContrast,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.camera_alt_rounded,
+                            color: AppColors.textHighContrast,
+                            size: 36,
+                          ),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ],

@@ -162,6 +162,19 @@ class WidgetSyncService {
     await appendMomentToWidget(moment: moment);
   }
 
+  /// Requests Android launcher to pin the UpdateMe widget onto the user's home screen
+  Future<bool> requestPinWidget() async {
+    try {
+      await HomeWidget.requestPinWidget(
+        name: _androidWidgetName,
+      );
+      return true;
+    } catch (e) {
+      debugPrint('[WidgetSyncService] Error requesting pin widget: $e');
+      return false;
+    }
+  }
+
   /// Clears widget state or displays default empty state
   Future<void> clearWidget() async {
     try {
@@ -171,10 +184,14 @@ class WidgetSyncService {
       await HomeWidget.saveWidgetData<String?>('widget_caption', null);
       await HomeWidget.saveWidgetData<String?>('widget_location', null);
       await HomeWidget.saveWidgetData<String?>('widget_time', null);
+      await HomeWidget.saveWidgetData<int>('widget_current_index', 0);
+      await HomeWidget.saveWidgetData<String?>('widget_update_id', null);
+      await HomeWidget.saveWidgetData<bool>('widget_is_reacted', false);
 
       await HomeWidget.updateWidget(
         name: _androidWidgetName,
       );
+      debugPrint('[WidgetSyncService] Cleared widget state and reset to empty! 🌲');
     } catch (e) {
       debugPrint('[WidgetSyncService] Error clearing widget: $e');
     }

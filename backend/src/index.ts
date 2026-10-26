@@ -587,7 +587,7 @@ app.patch('/api/updates/:id/react', async (c) => {
           const reactionPushPromise = sendPushNotification({
             token: author.fcm_token,
             title: 'UpdateMe ❤️',
-            body: `${reactorDisplayName} reacted to your moment!`,
+            body: `${reactorDisplayName} reacted to your update!`,
             data: {
               type: 'heart_reaction',
               updateId: updated.id,
