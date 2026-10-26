@@ -85,10 +85,9 @@ class UpdateMeWidgetProvider : HomeWidgetProvider() {
                 }
 
                 // 1. Immediately mark reacted in local SharedPreferences for zero-latency UI feedback
-                widgetData.edit().putBoolean("widget_is_reacted", true).apply()
-
-                // Also update the item in moments JSON array if present
                 val momentsJson = widgetData.getString("widget_moments_json", null)
+                var resolvedUpdateId = updateId
+
                 if (!momentsJson.isNullOrEmpty()) {
                     try {
                         val jsonArray = JSONArray(momentsJson)
@@ -96,15 +95,23 @@ class UpdateMeWidgetProvider : HomeWidgetProvider() {
                         if (currentIndex in 0 until jsonArray.length()) {
                             val obj = jsonArray.getJSONObject(currentIndex)
                             obj.put("is_reacted", true)
+                            resolvedUpdateId = obj.optString("id", updateId)
                             jsonArray.put(currentIndex, obj)
-                            widgetData.edit().putString("widget_moments_json", jsonArray.toString()).apply()
+                            widgetData.edit()
+                                .putString("widget_moments_json", jsonArray.toString())
+                                .putBoolean("widget_is_reacted", true)
+                                .putString("widget_update_id", resolvedUpdateId)
+                                .commit()
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "Error updating json array reaction: ${e.message}")
+                        widgetData.edit().putBoolean("widget_is_reacted", true).commit()
                     }
+                } else {
+                    widgetData.edit().putBoolean("widget_is_reacted", true).commit()
                 }
 
-                // 2. Trigger widget view redraw on all instances
+                // 2. Trigger widget view redraw on all instances immediately with zero latency
                 onUpdate(context, appWidgetManager, appWidgetIds, widgetData)
 
                 // 3. Perform asynchronous PATCH to backend worker in background thread

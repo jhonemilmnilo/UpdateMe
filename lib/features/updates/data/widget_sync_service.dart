@@ -32,13 +32,18 @@ class WidgetSyncService {
       for (int i = 0; i < moments.length; i++) {
         final moment = moments[i];
         final localImagePath = '${docsDir.path}/widget_moment_${moment.id}.jpg';
+        final file = File(localImagePath);
 
         try {
-          final response = await http.get(Uri.parse(moment.imageUrl));
-          if (response.statusCode == 200) {
-            final file = File(localImagePath);
-            await file.writeAsBytes(response.bodyBytes);
+          // If image is already cached locally, reuse it without redownloading to eliminate latency & flickering
+          if (!file.existsSync() || file.lengthSync() == 0) {
+            final response = await http.get(Uri.parse(moment.imageUrl));
+            if (response.statusCode == 200) {
+              await file.writeAsBytes(response.bodyBytes);
+            }
+          }
 
+          if (file.existsSync() && file.lengthSync() > 0) {
             final phTimeString = DateFormat('h:mm a').format(moment.createdAt.toLocal());
 
             cachedList.add({
@@ -59,23 +64,30 @@ class WidgetSyncService {
 
       final jsonString = jsonEncode(cachedList);
 
-      // Save moments list and default index to latest moment
+      // Preserve active viewing index if valid, otherwise point to latest
+      final existingIndex = await HomeWidget.getWidgetData<int>('widget_current_index');
+      int targetIndex = cachedList.length - 1;
+      if (existingIndex != null && existingIndex >= 0 && existingIndex < cachedList.length) {
+        targetIndex = existingIndex;
+      }
+
+      // Save moments list and index
       await HomeWidget.saveWidgetData<String>('widget_moments_json', jsonString);
-      await HomeWidget.saveWidgetData<int>('widget_current_index', cachedList.length - 1);
+      await HomeWidget.saveWidgetData<int>('widget_current_index', targetIndex);
       await HomeWidget.saveWidgetData<bool>('widget_has_update', true);
 
-      // Also set the latest moment data for direct initial fallback
-      final latest = cachedList.last;
-      await HomeWidget.saveWidgetData<String>('widget_update_id', latest['id'] as String);
-      await HomeWidget.saveWidgetData<bool>('widget_is_reacted', latest['is_reacted'] as bool);
-      await HomeWidget.saveWidgetData<String>('widget_image_path', latest['image_path'] as String);
-      await HomeWidget.saveWidgetData<String>('widget_caption', latest['caption'] as String);
-      await HomeWidget.saveWidgetData<String>('widget_location', latest['location'] as String);
-      await HomeWidget.saveWidgetData<String>('widget_time', latest['time'] as String);
+      // Also set the currently displayed moment data for fallback
+      final activeMoment = cachedList[targetIndex];
+      await HomeWidget.saveWidgetData<String>('widget_update_id', activeMoment['id'] as String);
+      await HomeWidget.saveWidgetData<bool>('widget_is_reacted', activeMoment['is_reacted'] as bool);
+      await HomeWidget.saveWidgetData<String>('widget_image_path', activeMoment['image_path'] as String);
+      await HomeWidget.saveWidgetData<String>('widget_caption', activeMoment['caption'] as String);
+      await HomeWidget.saveWidgetData<String>('widget_location', activeMoment['location'] as String);
+      await HomeWidget.saveWidgetData<String>('widget_time', activeMoment['time'] as String);
 
       await HomeWidget.updateWidget(name: _androidWidgetName);
 
-      debugPrint('[WidgetSyncService] Home screen widget synced with ${cachedList.length} moments! 🌲');
+      debugPrint('[WidgetSyncService] Home screen widget synced with ${cachedList.length} moments at index $targetIndex! 🌲');
     } catch (e) {
       debugPrint('[WidgetSyncService] Error syncing moments list: $e');
     }
