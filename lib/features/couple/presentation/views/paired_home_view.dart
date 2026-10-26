@@ -157,6 +157,7 @@ class _PairedHomeViewState extends State<PairedHomeView> {
                   DailyMomentsStackDeck(
                     updates: currentList,
                     emptyMessage: emptyMessage,
+                    currentUserId: widget.user.id,
                   ),
               ],
             ),

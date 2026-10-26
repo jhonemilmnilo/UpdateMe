@@ -153,11 +153,12 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
   Widget _buildCardContent(UpdateModel update, int cardIndex) {
     // Format to user's device local time (already UTC+8 in PH)
     final formattedTime = DateFormat('h:mm a').format(update.createdAt.toLocal());
+    final isSender = update.senderId == widget.currentUserId;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(32),
       child: GestureDetector(
-        onDoubleTap: () => _toggleHeart(cardIndex),
+        onDoubleTap: isSender ? null : () => _toggleHeart(cardIndex),
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -312,7 +313,7 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Prominent Large Editorial Caption
+                  // Refined Intimate Caption
                   if (update.caption != null && update.caption!.trim().isNotEmpty) ...[
                     Text(
                       update.caption!,
@@ -320,20 +321,20 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: AppColors.textHighContrast,
-                        fontSize: 21,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: -0.4,
-                        height: 1.25,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: -0.2,
+                        height: 1.35,
                         shadows: [
                           Shadow(
                             color: Colors.black45,
-                            blurRadius: 8,
-                            offset: Offset(0, 2),
+                            blurRadius: 6,
+                            offset: Offset(0, 1.5),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
                   ],
 
                   // Single clean time metadata at the bottom
@@ -362,35 +363,33 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
               ),
             ),
 
-            // Floating Heart Reaction Button (Exact position & style from flutter_01.png)
+            // Floating Heart Reaction:
+            // Always visible so both receiver and sender can see the reaction status.
+            // If sender: read-only status indicator (not clickable).
+            // If receiver: interactive toggle button.
             Positioned(
               bottom: 20,
               right: 20,
               child: GestureDetector(
-                onTap: () => _toggleHeart(cardIndex),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeOutBack,
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: update.isReacted
-                        ? const Color(0xFF1E2622).withValues(alpha: 0.95)
-                        : const Color(0xFF1E2622).withValues(alpha: 0.75),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.35),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
+                onTap: isSender ? null : () => _toggleHeart(cardIndex),
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  color: Colors.transparent,
                   child: Center(
                     child: Icon(
                       update.isReacted ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                      color: update.isReacted ? const Color(0xFFFF5252) : AppColors.textHighContrast,
-                      size: 26,
+                      color: update.isReacted
+                          ? const Color(0xFFFF5252)
+                          : AppColors.textHighContrast.withValues(alpha: 0.85),
+                      size: 28,
+                      shadows: const [
+                        Shadow(
+                          color: Colors.black45,
+                          blurRadius: 10,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
                     ),
                   ),
                 ),
