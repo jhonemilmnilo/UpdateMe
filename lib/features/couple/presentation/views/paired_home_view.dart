@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../auth/data/auth_service.dart';
+import '../../../updates/data/daily_moments_cache_service.dart';
 import '../../../updates/data/outbox_service.dart';
 import '../../../updates/data/sync_engine.dart';
 import '../../../updates/data/update_model.dart';
@@ -44,6 +45,8 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     SyncEngine().pendingItemsNotifier.addListener(_onPendingItemsChanged);
+    // Purge any outdated moments from previous days immediately
+    DailyMomentsCacheService().purgeOutdatedMoments();
     _loadTodayMoments();
     _subscribeToRealtimeUpdates();
     SyncEngine().processQueue();
@@ -58,7 +61,8 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      debugPrint('[PairedHomeView] App resumed. Re-fetching moments & draining outbox...');
+      debugPrint('[PairedHomeView] App resumed. Purging stale moments, re-fetching & draining outbox...');
+      DailyMomentsCacheService().purgeOutdatedMoments();
       SyncEngine().processQueue();
       _loadTodayMoments(isBackgroundSync: true);
     }
@@ -109,10 +113,15 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
       setState(() => _isLoadingMoments = true);
     }
 
-    // 1. FIRST: Always load local pending outbox items immediately (100% offline-safe)
+    final cacheService = DailyMomentsCacheService();
+
+    // 1. FIRST: Load local cached moments and pending outbox items immediately (100% offline-safe)
     List<UpdateModel> localPendingMoments = [];
     Set<String> pendingIds = {};
     try {
+      final cachedReceived = await cacheService.getTodayCachedMoments(type: 'received');
+      final cachedSent = await cacheService.getTodayCachedMoments(type: 'sent');
+
       final pendingOutbox = await OutboxService().getPendingItems();
       localPendingMoments = pendingOutbox.map((item) => UpdateModel(
         id: item.id,
@@ -130,17 +139,28 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
       )).toList();
       pendingIds = pendingOutbox.map((e) => e.id).toSet();
 
-      // Immediately render local outbox moments if we have any or if currently offline
+      // Immediately render local cached and outbox moments
       if (mounted) {
         setState(() {
-          final existingRemoteSent = _sentMoments.where((m) => !m.isPending && !pendingIds.contains(m.id)).toList();
-          final immediateSent = [...existingRemoteSent, ...localPendingMoments];
-          immediateSent.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+          if (cachedReceived.isNotEmpty) {
+            final sortedCached = List<UpdateModel>.from(cachedReceived)
+              ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+            _receivedMoments = sortedCached;
+          }
+          final immediateSent = [
+            ...cachedSent.where((m) => !pendingIds.contains(m.id)),
+            ...localPendingMoments,
+          ];
+          // Newest first! Newest/pending moment is always index 0 (bungad sa user)
+          immediateSent.sort((a, b) => b.createdAt.compareTo(a.createdAt));
           _sentMoments = immediateSent;
+          if (_receivedMoments.isNotEmpty || _sentMoments.isNotEmpty) {
+            _isLoadingMoments = false;
+          }
         });
       }
     } catch (e) {
-      debugPrint('[PairedHomeView] Error loading local outbox moments: $e');
+      debugPrint('[PairedHomeView] Error loading local cached moments: $e');
     }
 
     // 2. SECOND: Attempt remote network fetch (degrades gracefully if offline or no signal)
@@ -155,15 +175,32 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
         type: 'sent',
       );
 
+      // Sort received moments descending (newest/most recent first)
+      final sortedReceived = List<UpdateModel>.from(received)
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      // Cache received and sent moments and their images to local storage asynchronously
+      final localizedReceived = await cacheService.cacheTodayMoments(
+        type: 'received',
+        moments: sortedReceived,
+      );
+
       final mergedSent = [
         ...remoteSent.where((m) => !pendingIds.contains(m.id)),
         ...localPendingMoments,
       ];
-      mergedSent.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      // Newest first! Newest/pending moment is always index 0 (bungad sa user)
+      mergedSent.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      // Cache remote sent moments to disk as well
+      await cacheService.cacheTodayMoments(
+        type: 'sent',
+        moments: remoteSent,
+      );
 
       if (mounted) {
         setState(() {
-          _receivedMoments = received;
+          _receivedMoments = localizedReceived;
           _sentMoments = mergedSent;
           _isLoadingMoments = false;
         });
@@ -247,7 +284,10 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
       children: [
         // Main Scrollable Area
         RefreshIndicator(
-          onRefresh: _loadTodayMoments,
+          onRefresh: () async {
+            SyncEngine().processQueue();
+            await _loadTodayMoments();
+          },
           color: AppColors.primaryAccent,
           backgroundColor: AppColors.secondarySurface,
           child: SingleChildScrollView(
@@ -291,7 +331,7 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
                   )
                 else
                   DailyMomentsStackDeck(
-                    key: ValueKey('deck_${_selectedTabIndex}_${currentList.length}_${currentList.isNotEmpty ? currentList.last.id : "empty"}'),
+                    key: ValueKey('deck_$_selectedTabIndex'),
                     updates: currentList,
                     emptyMessage: emptyMessage,
                     currentUserId: widget.user.id,

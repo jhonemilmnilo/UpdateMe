@@ -34,24 +34,36 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
   void initState() {
     super.initState();
     _currentUpdates = List.from(widget.updates);
-    _currentPageIndex = _currentUpdates.isNotEmpty ? _currentUpdates.length - 1 : 0;
-    _pageController = PageController(initialPage: _currentPageIndex);
+    _currentPageIndex = 0; // Index 0 is always the newest/pending moment
+    _pageController = PageController(initialPage: 0);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_pageController.hasClients && _pageController.page?.round() != 0) {
+        _pageController.jumpToPage(0);
+      }
+    });
   }
 
   @override
   void didUpdateWidget(covariant DailyMomentsStackDeck oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final hasNewItem = widget.updates.length > oldWidget.updates.length;
     setState(() {
       _currentUpdates = List.from(widget.updates);
       if (_currentUpdates.isEmpty) {
+        _currentPageIndex = 0;
+      } else if (hasNewItem) {
         _currentPageIndex = 0;
       } else {
         _currentPageIndex = _currentPageIndex.clamp(0, _currentUpdates.length - 1);
       }
     });
-    if (_pageController.hasClients && _currentUpdates.isNotEmpty) {
-      _pageController.jumpToPage(_currentPageIndex);
-    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (hasNewItem && _pageController.hasClients) {
+        _pageController.jumpToPage(0);
+      }
+    });
   }
 
   Future<void> _toggleHeart(int index) async {

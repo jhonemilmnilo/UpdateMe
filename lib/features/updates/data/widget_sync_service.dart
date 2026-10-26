@@ -35,8 +35,15 @@ class WidgetSyncService {
         final file = File(localImagePath);
 
         try {
-          // If image is already cached locally, reuse it without redownloading to eliminate latency & flickering
-          if (!file.existsSync() || file.lengthSync() == 0) {
+          // If image is already a local file or cached locally, reuse it without redownloading to eliminate latency & flickering
+          if (moment.isLocalImage) {
+            final srcFile = File(moment.imageUrl);
+            if (srcFile.existsSync()) {
+              if (!file.existsSync() || file.lengthSync() == 0) {
+                await srcFile.copy(localImagePath);
+              }
+            }
+          } else if (!file.existsSync() || file.lengthSync() == 0) {
             final response = await http.get(Uri.parse(moment.imageUrl));
             if (response.statusCode == 200) {
               await file.writeAsBytes(response.bodyBytes);

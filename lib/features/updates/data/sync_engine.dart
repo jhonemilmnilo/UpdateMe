@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'daily_moments_cache_service.dart';
 import 'outbox_service.dart';
 import 'update_service.dart';
 
@@ -45,6 +46,14 @@ class SyncEngine {
       debugPrint('[SyncEngine] Found ${items.length} pending offline items. Starting sync... 🚀');
 
       for (final item in items) {
+        // Guard against legacy non-UUID items from previous iterations
+        final isUuid = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$').hasMatch(item.id);
+        if (!isUuid) {
+          debugPrint('[SyncEngine] Found legacy non-UUID item ${item.id}. Purging to unblock queue.');
+          await _outbox.removeItem(item);
+          continue;
+        }
+
         final imageFile = File(item.localImagePath);
         if (!await imageFile.exists()) {
           debugPrint('[SyncEngine] Image file missing for item ${item.id}. Purging outbox record.');
@@ -66,7 +75,7 @@ class SyncEngine {
 
           // 3. Post to backend with client-generated id and original createdAt
           debugPrint('[SyncEngine] Posting update to Cloudflare backend with original createdAt ${item.createdAt.toIso8601String()}...');
-          await _updateService.sendUpdate(
+          final createdUpdate = await _updateService.sendUpdate(
             id: item.id,
             createdAt: item.createdAt,
             senderId: item.senderId,
@@ -77,15 +86,24 @@ class SyncEngine {
             longitude: item.longitude,
           );
 
-          // 4. Mark as synced locally so it will NEVER be uploaded again
+          // 4. Save directly into DailyMomentsCacheService so it persists offline immediately everywhere
+          final cacheService = DailyMomentsCacheService();
+          final existingSent = await cacheService.getTodayCachedMoments(type: 'sent');
+          final updatedSentList = [
+            ...existingSent.where((m) => m.id != item.id),
+            createdUpdate.copyWith(imageUrl: item.localImagePath), // Preserve local image path for instant 0ms offline display
+          ];
+          await cacheService.cacheTodayMoments(type: 'sent', moments: updatedSentList);
+
+          // 5. Mark as synced locally so it will NEVER be uploaded again
           await _outbox.updateItem(item.copyWith(
             status: 'synced',
             isSynced: true,
           ));
 
-          // 5. On success: purge from outbox (removes both JSON and cached jpg)
+          // 6. On success: purge from outbox (removes outbox JSON metadata)
           await _outbox.removeItem(item);
-          debugPrint('[SyncEngine] Successfully synced item ${item.id} with isSynced=true! 🎉');
+          debugPrint('[SyncEngine] Successfully synced item ${item.id} with isSynced=true and cached to daily_cache! 🎉');
           await refreshPendingItems();
 
           onSyncComplete?.call();
