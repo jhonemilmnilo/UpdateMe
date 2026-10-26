@@ -34,7 +34,8 @@ class WidgetSyncService {
       // 2. Format Philippine Time (PST: UTC+8)
       final phTimeString = DateFormat('h:mm a').format(moment.createdAt.toLocal());
 
-      // 3. Save widget metadata into SharedPreferences via HomeWidget
+      await HomeWidget.saveWidgetData<String>('widget_update_id', moment.id);
+      await HomeWidget.saveWidgetData<bool>('widget_is_reacted', moment.isReacted);
       await HomeWidget.saveWidgetData<String>('widget_image_path', localImagePath);
       await HomeWidget.saveWidgetData<String>('widget_caption', moment.caption ?? '');
       await HomeWidget.saveWidgetData<String>('widget_location', moment.locationName ?? 'MOMENT');
