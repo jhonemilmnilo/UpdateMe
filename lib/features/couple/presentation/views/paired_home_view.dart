@@ -6,6 +6,7 @@ import '../../../../core/widgets/app_toast.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../../updates/data/update_model.dart';
 import '../../../updates/data/update_service.dart';
+import '../../../updates/data/widget_sync_service.dart';
 import '../../../updates/presentation/modals/send_update_modal.dart';
 import '../../../updates/presentation/widgets/daily_moments_stack_deck.dart';
 import '../../../updates/presentation/widgets/moments_tab_bar.dart';
@@ -25,6 +26,7 @@ class PairedHomeView extends StatefulWidget {
 class _PairedHomeViewState extends State<PairedHomeView> {
   final ImagePicker _imagePicker = ImagePicker();
   final UpdateService _updateService = UpdateService();
+  final WidgetSyncService _widgetSyncService = WidgetSyncService();
 
   int _selectedTabIndex = 0; // 0: From Partner, 1: Sent Moments
   bool _isLoadingMoments = true;
@@ -58,6 +60,11 @@ class _PairedHomeViewState extends State<PairedHomeView> {
           _sentMoments = sent;
           _isLoadingMoments = false;
         });
+
+        // Automatically update the Android Home Screen Widget with the latest received moment
+        if (_receivedMoments.isNotEmpty) {
+          _widgetSyncService.syncLatestMomentToWidget(moment: _receivedMoments.last);
+        }
       }
     } catch (e) {
       if (mounted) {
