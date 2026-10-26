@@ -40,15 +40,16 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
   @override
   void didUpdateWidget(covariant DailyMomentsStackDeck oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.updates != widget.updates) {
-      final wasAtEnd = _currentPageIndex >= _currentUpdates.length - 1;
+    setState(() {
       _currentUpdates = List.from(widget.updates);
-      if (wasAtEnd || _currentPageIndex >= _currentUpdates.length) {
-        _currentPageIndex = (_currentUpdates.length - 1).clamp(0, _currentUpdates.length);
-        if (_pageController.hasClients) {
-          _pageController.jumpToPage(_currentPageIndex);
-        }
+      if (_currentUpdates.isEmpty) {
+        _currentPageIndex = 0;
+      } else {
+        _currentPageIndex = _currentPageIndex.clamp(0, _currentUpdates.length - 1);
       }
+    });
+    if (_pageController.hasClients && _currentUpdates.isNotEmpty) {
+      _pageController.jumpToPage(_currentPageIndex);
     }
   }
 

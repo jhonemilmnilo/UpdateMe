@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../auth/data/auth_service.dart';
@@ -34,15 +35,50 @@ class _PairedHomeViewState extends State<PairedHomeView> {
   List<UpdateModel> _sentMoments = [];
   bool _isOpeningCamera = false;
 
+  RealtimeChannel? _updatesChannel;
+
   @override
   void initState() {
     super.initState();
     _loadTodayMoments();
+    _subscribeToRealtimeUpdates();
   }
 
-  Future<void> _loadTodayMoments() async {
+  @override
+  void dispose() {
+    _updatesChannel?.unsubscribe();
+    super.dispose();
+  }
+
+  /// Supabase WebSocket Realtime Channel for instant live updates and reactions
+  void _subscribeToRealtimeUpdates() {
     try {
-      setState(() => _isLoadingMoments = true);
+      _updatesChannel = Supabase.instance.client
+          .channel('updates-realtime-${widget.user.id}')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'Updates',
+            callback: (payload) {
+              debugPrint('[Realtime] Live event received: ${payload.eventType} -> new: ${payload.newRecord}');
+              // Re-fetch today moments immediately without pull-to-refresh
+              _loadTodayMoments(isBackgroundSync: true);
+            },
+          )
+          .subscribe((status, [error]) {
+            debugPrint('[Realtime] Channel status: $status, error: $error');
+          });
+      debugPrint('[Realtime] Subscribed to Updates table live channel! ⚡');
+    } catch (e) {
+      debugPrint('[Realtime] Error subscribing to channel: $e');
+    }
+  }
+
+  Future<void> _loadTodayMoments({bool isBackgroundSync = false}) async {
+    try {
+      if (!isBackgroundSync) {
+        setState(() => _isLoadingMoments = true);
+      }
 
       final received = await _updateService.getTodayUpdates(
         userId: widget.user.id,
@@ -91,6 +127,9 @@ class _PairedHomeViewState extends State<PairedHomeView> {
           context: context,
           initialImage: File(photo.path),
           onUpdateSent: () {
+            setState(() {
+              _selectedTabIndex = 1; // Switch to Sent Moments tab
+            });
             _loadTodayMoments();
           },
         );

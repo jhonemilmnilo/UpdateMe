@@ -53,3 +53,6 @@ app.*.map.json
 node_modules/
 dist/
 .wrangler/
+*firebase-adminsdk*.json
+service-account.json
+backend/service-account.json

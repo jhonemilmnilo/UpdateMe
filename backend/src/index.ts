@@ -151,6 +151,32 @@ app.post('/api/auth/set-password', async (c) => {
   }
 })
 
+// 0.15 Update User FCM Device Token
+app.patch('/api/users/:userId/fcm-token', async (c) => {
+  try {
+    const supabase = getSupabase(c)
+    const userId = c.req.param('userId')
+    const { token } = await c.req.json<{ token: string }>()
+
+    if (!token) {
+      return c.json({ error: 'FCM token is required' }, 400)
+    }
+
+    const { error } = await supabase
+      .from('User')
+      .update({ fcm_token: token, updated_at: new Date().toISOString() })
+      .eq('id', userId)
+
+    if (error) {
+      return c.json({ error: error.message }, 500)
+    }
+
+    return c.json({ success: true })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // 0.2 Verify Master Passcode with Brute-Force Protection
 app.post('/api/auth/verify-password', async (c) => {
   try {
@@ -444,21 +470,21 @@ app.get('/api/updates/feed/:userId', async (c) => {
   }
 })
 
-// 6. Get Today's Moments (Strictly filtered to current date, received vs sent)
+// 6. Get Today's Moments (Strictly filtered to recent 24h / current date, received vs sent)
 app.get('/api/updates/today/:userId', async (c) => {
   try {
     const supabase = getSupabase(c)
     const userId = c.req.param('userId')
     const type = c.req.query('type') || 'received' // 'received' (From Partner) or 'sent' (Sent Moments)
 
-    // Calculate Start of Today in UTC
+    // Robust rolling 24-hour window for current day moments across any client timezone
     const now = new Date()
-    const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString()
+    const rollingStart = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()
 
     let query = supabase
       .from('Updates')
       .select('*, sender:User!sender_id(id, display_name, avatar_url, username)')
-      .gte('created_at', startOfToday)
+      .gte('created_at', rollingStart)
       .order('created_at', { ascending: true }) // chronological order for carousel stories
 
     if (type === 'sent') {

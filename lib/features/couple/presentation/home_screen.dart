@@ -8,6 +8,7 @@ import '../../auth/data/auth_service.dart';
 import '../../updates/data/update_model.dart';
 import '../../updates/data/update_service.dart';
 import '../../updates/presentation/views/fullscreen_moments_viewer_screen.dart';
+import '../../notifications/push_notification_service.dart';
 import 'views/paired_home_view.dart';
 import 'views/unpaired_pairing_view.dart';
 
@@ -27,6 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _checkInitialWidgetLaunch();
     _listenToWidgetClicks();
+    PushNotificationService().registerDeviceToken();
   }
 
   @override

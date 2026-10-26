@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "937358300457",
+    "project_id": "updateme-2a916",
+    "storage_bucket": "updateme-2a916.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:937358300457:android:8facab4cc297694db4d338",
+        "android_client_info": {
+          "package_name": "com.example.update_me"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCq7gmV8tDFYE8NCp6Woc2bwaoYrgURPg8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

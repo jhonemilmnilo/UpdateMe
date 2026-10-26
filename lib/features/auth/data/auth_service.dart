@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../notifications/push_notification_service.dart';
 
 class UserModel {
   final String id;
@@ -145,6 +146,9 @@ class AuthService {
     await prefs.setString(_prefUserKey, jsonEncode(user.toJson()));
     currentUserNotifier.value = user;
     debugPrint('[AuthService] Activated session for: ${user.email}');
+
+    // Immediately register FCM device token for newly authenticated user
+    PushNotificationService().registerDeviceToken(userId: user.id);
   }
 
   /// Set Master Passcode for first-time user
