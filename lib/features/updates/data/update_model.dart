@@ -8,6 +8,7 @@ class UpdateModel {
   final double? latitude;
   final double? longitude;
   final bool isRead;
+  final bool isReacted;
   final DateTime createdAt;
   final Map<String, dynamic>? sender;
 
@@ -21,6 +22,7 @@ class UpdateModel {
     this.latitude,
     this.longitude,
     required this.isRead,
+    this.isReacted = false,
     required this.createdAt,
     this.sender,
   });
@@ -36,8 +38,39 @@ class UpdateModel {
       latitude: json['latitude'] != null ? double.tryParse(json['latitude'].toString()) : null,
       longitude: json['longitude'] != null ? double.tryParse(json['longitude'].toString()) : null,
       isRead: json['is_read'] as bool? ?? false,
+      isReacted: json['is_reacted'] as bool? ?? false,
       createdAt: _parseUtcToLocal(json['created_at']),
       sender: json['sender'] as Map<String, dynamic>?,
+    );
+  }
+
+  UpdateModel copyWith({
+    String? id,
+    String? senderId,
+    String? receiverId,
+    String? imageUrl,
+    String? caption,
+    String? locationName,
+    double? latitude,
+    double? longitude,
+    bool? isRead,
+    bool? isReacted,
+    DateTime? createdAt,
+    Map<String, dynamic>? sender,
+  }) {
+    return UpdateModel(
+      id: id ?? this.id,
+      senderId: senderId ?? this.senderId,
+      receiverId: receiverId ?? this.receiverId,
+      imageUrl: imageUrl ?? this.imageUrl,
+      caption: caption ?? this.caption,
+      locationName: locationName ?? this.locationName,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      isRead: isRead ?? this.isRead,
+      isReacted: isReacted ?? this.isReacted,
+      createdAt: createdAt ?? this.createdAt,
+      sender: sender ?? this.sender,
     );
   }
 
@@ -75,6 +108,7 @@ class UpdateModel {
       'latitude': latitude,
       'longitude': longitude,
       'is_read': isRead,
+      'is_reacted': isReacted,
       'created_at': createdAt.toIso8601String(),
     };
   }

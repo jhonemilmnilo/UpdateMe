@@ -1,8 +1,10 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../data/update_model.dart';
+import '../../data/update_service.dart';
 
 class DailyMomentsStackDeck extends StatefulWidget {
   final List<UpdateModel> updates;
@@ -19,30 +21,68 @@ class DailyMomentsStackDeck extends StatefulWidget {
 }
 
 class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
-  int _topCardIndex = 0;
+  final UpdateService _updateService = UpdateService();
+  late PageController _pageController;
+  late List<UpdateModel> _currentUpdates;
+  int _currentPageIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentUpdates = List.from(widget.updates);
+    _pageController = PageController(initialPage: 0);
+  }
 
   @override
   void didUpdateWidget(covariant DailyMomentsStackDeck oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.updates != widget.updates) {
-      _topCardIndex = 0;
+      _currentUpdates = List.from(widget.updates);
+      if (_currentPageIndex >= _currentUpdates.length) {
+        _currentPageIndex = (_currentUpdates.length - 1).clamp(0, _currentUpdates.length);
+        if (_pageController.hasClients) {
+          _pageController.jumpToPage(_currentPageIndex);
+        }
+      }
     }
   }
 
-  void _undoPreviousCard() {
-    if (_topCardIndex > 0) {
+  Future<void> _toggleHeart(int index) async {
+    if (index >= _currentUpdates.length) return;
+
+    HapticFeedback.mediumImpact();
+    final item = _currentUpdates[index];
+    final newReactionState = !item.isReacted;
+
+    // Optimistic UI update
+    setState(() {
+      _currentUpdates[index] = item.copyWith(isReacted: newReactionState);
+    });
+
+    final success = await _updateService.toggleReaction(
+      updateId: item.id,
+      isReacted: newReactionState,
+    );
+
+    // Rollback if failed
+    if (!success && mounted) {
       setState(() {
-        _topCardIndex--;
+        _currentUpdates[index] = item;
       });
     }
   }
 
-  void _dismissCurrentCard() {
-    if (_topCardIndex < widget.updates.length) {
-      setState(() {
-        _topCardIndex++;
-      });
-    }
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _onPageChanged(int index) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _currentPageIndex = index;
+    });
   }
 
   @override
@@ -64,146 +104,39 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
       );
     }
 
-    final remainingCount = widget.updates.length - _topCardIndex;
-
-    // When all cards have been swiped away
-    if (remainingCount <= 0) {
-      return SizedBox(
-        height: 360,
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'You’ve viewed all moments for today.',
-                style: TextStyle(
-                  color: AppColors.supportingText,
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 16),
-              OutlinedButton(
-                onPressed: () => setState(() => _topCardIndex = 0),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.textHighContrast,
-                  side: BorderSide(
-                    color: AppColors.supportingText.withValues(alpha: 0.35),
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                child: const Text('Start from First Photo'),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Counter & Undo Return Button Header
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              '${_topCardIndex + 1} of ${widget.updates.length}',
-              style: const TextStyle(
-                color: AppColors.supportingText,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.0,
-              ),
+        // Counter Header (Minimalist indicator, no redundant buttons)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12.0),
+          child: Text(
+            '${_currentPageIndex + 1} of ${widget.updates.length}',
+            style: const TextStyle(
+              color: AppColors.supportingText,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.0,
             ),
-
-            // Undo / Return Previous Card Button
-            if (_topCardIndex > 0)
-              GestureDetector(
-                onTap: _undoPreviousCard,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: AppColors.secondarySurface,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: AppColors.supportingText.withValues(alpha: 0.25),
-                    ),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.replay_rounded,
-                        color: AppColors.textHighContrast,
-                        size: 15,
-                      ),
-                      SizedBox(width: 5),
-                      Text(
-                        'Previous',
-                        style: TextStyle(
-                          color: AppColors.textHighContrast,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else
-              const SizedBox.shrink(),
-          ],
+          ),
         ),
-        const SizedBox(height: 10),
 
-        // Stacked Card Deck Area with Sleek Modern Squircles (Responsive Layout)
+        // Responsive Swipeable PageView Deck
         LayoutBuilder(
           builder: (context, constraints) {
-            // Responsive height: Maintain a lush 4:5 aspect ratio or clamp gracefully between 420dp and 560dp
             final screenHeight = MediaQuery.of(context).size.height;
             final calculatedHeight = (constraints.maxWidth * 1.25).clamp(400.0, screenHeight * 0.62);
 
             return SizedBox(
               height: calculatedHeight,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  // 3rd Card in Background (flat, subtle peek)
-                  if (_topCardIndex + 2 < widget.updates.length)
-                    Positioned(
-                      top: 12,
-                      left: 12,
-                      right: 12,
-                      bottom: 0,
-                      child: _buildStaticCard(widget.updates[_topCardIndex + 2], opacity: 0.45),
-                    ),
-
-                  // 2nd Card in Middle (flat, subtle peek)
-                  if (_topCardIndex + 1 < widget.updates.length)
-                    Positioned(
-                      top: 6,
-                      left: 6,
-                      right: 6,
-                      bottom: 0,
-                      child: _buildStaticCard(widget.updates[_topCardIndex + 1], opacity: 0.75),
-                    ),
-
-                  // Top Card: Dismissible only if NOT the last photo
-                  Positioned.fill(
-                    child: _topCardIndex < widget.updates.length - 1
-                        ? Dismissible(
-                            key: Key(widget.updates[_topCardIndex].id),
-                            direction: DismissDirection.horizontal,
-                            onDismissed: (direction) {
-                              _dismissCurrentCard();
-                            },
-                            child: _buildCardContent(widget.updates[_topCardIndex]),
-                          )
-                        : _buildCardContent(widget.updates[_topCardIndex]),
-                  ),
-                ],
+              child: PageView.builder(
+                controller: _pageController,
+                physics: const BouncingScrollPhysics(),
+                onPageChanged: _onPageChanged,
+                itemCount: _currentUpdates.length,
+                itemBuilder: (context, index) {
+                  return _buildCardContent(_currentUpdates[index], index);
+                },
               ),
             );
           },
@@ -212,50 +145,14 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
     );
   }
 
-  Widget _buildStaticCard(UpdateModel update, {required double opacity}) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.secondarySurface.withValues(alpha: opacity),
-        borderRadius: BorderRadius.circular(32),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.08),
-          width: 1.0,
-        ),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(32),
-        child: Opacity(
-          opacity: opacity,
-          child: CachedNetworkImage(
-            imageUrl: update.imageUrl,
-            fit: BoxFit.cover,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCardContent(UpdateModel update) {
+  Widget _buildCardContent(UpdateModel update, int cardIndex) {
     // Format to user's device local time (already UTC+8 in PH)
     final formattedTime = DateFormat('h:mm a').format(update.createdAt.toLocal());
 
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(32),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.14),
-          width: 1.2,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.5),
-            blurRadius: 28,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(32),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(32),
+      child: GestureDetector(
+        onDoubleTap: () => _toggleHeart(cardIndex),
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -303,16 +200,16 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
               ),
             ),
 
-            // Story Progress Dashes (Top Edge)
-            if (widget.updates.length > 1)
+            // Story Progress Dashes (Top Edge, synchronized with active page)
+            if (_currentUpdates.length > 1)
               Positioned(
                 top: 14,
                 left: 16,
                 right: 16,
                 child: Row(
-                  children: List.generate(widget.updates.length, (index) {
-                    final isActive = index == _topCardIndex;
-                    final isPast = index < _topCardIndex;
+                  children: List.generate(_currentUpdates.length, (index) {
+                    final isActive = index == _currentPageIndex;
+                    final isPast = index < _currentPageIndex;
                     return Expanded(
                       child: Container(
                         height: 3,
@@ -329,25 +226,21 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
                 ),
               ),
 
-            // Top Badges: Location & TODAY (No duplicate time here)
+            // Top Badges: Location & TODAY (Clean pill badges, zero stroke borders)
             Positioned(
-              top: widget.updates.length > 1 ? 26 : 16,
+              top: _currentUpdates.length > 1 ? 26 : 16,
               left: 16,
               right: 16,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Location Only (clean and concise, no time clutter)
+                  // Location Only
                   if (update.locationName != null && update.locationName!.trim().isNotEmpty)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                       decoration: BoxDecoration(
                         color: const Color(0xFF1E2622).withValues(alpha: 0.75),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.12),
-                          width: 0.8,
-                        ),
                       ),
                       child: Text(
                         update.locationName!.toUpperCase(),
@@ -368,10 +261,6 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
                     decoration: BoxDecoration(
                       color: const Color(0xFF1E2622).withValues(alpha: 0.75),
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.12),
-                        width: 0.8,
-                      ),
                     ),
                     child: const Text(
                       'TODAY',
@@ -413,7 +302,7 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
             Positioned(
               bottom: 22,
               left: 20,
-              right: 20,
+              right: 80, // Leave generous room for floating heart button
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -444,7 +333,6 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
 
                   // Single clean time metadata at the bottom
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
                         'Received $formattedTime',
@@ -454,9 +342,10 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
                           fontWeight: FontWeight.w500,
                         ),
                       ),
+                      const SizedBox(width: 8),
                       Container(
-                        width: 6,
-                        height: 6,
+                        width: 5,
+                        height: 5,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: AppColors.primaryAccent.withValues(alpha: 0.8),
@@ -465,6 +354,41 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
                     ],
                   ),
                 ],
+              ),
+            ),
+
+            // Floating Heart Reaction Button (Exact position & style from flutter_01.png)
+            Positioned(
+              bottom: 20,
+              right: 20,
+              child: GestureDetector(
+                onTap: () => _toggleHeart(cardIndex),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOutBack,
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: update.isReacted
+                        ? const Color(0xFF1E2622).withValues(alpha: 0.95)
+                        : const Color(0xFF1E2622).withValues(alpha: 0.75),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.35),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Icon(
+                      update.isReacted ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                      color: update.isReacted ? const Color(0xFFFF5252) : AppColors.textHighContrast,
+                      size: 26,
+                    ),
+                  ),
+                ),
               ),
             ),
           ],

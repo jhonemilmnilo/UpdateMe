@@ -210,4 +210,27 @@ class UpdateService {
     final List list = data['updates'] ?? [];
     return list.map((item) => UpdateModel.fromJson(item)).toList();
   }
+
+  /// Toggle reaction on an update
+  Future<bool> toggleReaction({
+    required String updateId,
+    required bool isReacted,
+  }) async {
+    try {
+      final response = await http.patch(
+        Uri.parse('$_backendBaseUrl/api/updates/$updateId/react'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'isReacted': isReacted}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('[UpdateService] Failed to toggle reaction: $e');
+      return false;
+    }
+  }
 }

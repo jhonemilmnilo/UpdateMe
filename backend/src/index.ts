@@ -479,4 +479,29 @@ app.get('/api/updates/today/:userId', async (c) => {
   }
 })
 
+// 7. Toggle Reaction on a Moment
+app.patch('/api/updates/:id/react', async (c) => {
+  try {
+    const supabase = getSupabase(c)
+    const updateId = c.req.param('id')
+    const { isReacted } = await c.req.json<{ isReacted: boolean }>()
+
+    const { data: updated, error } = await supabase
+      .from('Updates')
+      .update({ is_reacted: isReacted })
+      .eq('id', updateId)
+      .select('*')
+      .single()
+
+    if (error) {
+      return c.json({ error: error.message }, 500)
+    }
+
+    return c.json({ success: true, update: updated })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 export default app
+

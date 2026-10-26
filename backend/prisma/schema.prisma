@@ -44,6 +44,7 @@ model Updates {
   latitude     Decimal?  @db.Decimal(10, 7)
   longitude    Decimal?  @db.Decimal(10, 7)
   isRead       Boolean   @default(false) @map("is_read")
+  isReacted    Boolean   @default(false) @map("is_reacted")
   createdAt    DateTime  @default(now()) @map("created_at")
 
   sender   User @relation("SentUpdates", fields: [senderId], references: [id], onDelete: Cascade)
