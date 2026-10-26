@@ -16,12 +16,15 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.concurrent.thread
+import org.json.JSONArray
 import org.json.JSONObject
 
 class UpdateMeWidgetProvider : HomeWidgetProvider() {
 
     companion object {
         const val ACTION_REACT_MOMENT = "com.example.update_me.ACTION_REACT_MOMENT"
+        const val ACTION_PREV_MOMENT = "com.example.update_me.ACTION_PREV_MOMENT"
+        const val ACTION_NEXT_MOMENT = "com.example.update_me.ACTION_NEXT_MOMENT"
         const val TAG = "UpdateMeWidgetProvider"
         const val BACKEND_URL = "https://update-me-backend.nilojhonemil1.workers.dev"
     }
@@ -29,53 +32,107 @@ class UpdateMeWidgetProvider : HomeWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
 
-        if (intent.action == ACTION_REACT_MOMENT) {
-            val widgetData = HomeWidgetPlugin.getData(context)
-            val updateId = widgetData.getString("widget_update_id", null)
-            val isAlreadyReacted = widgetData.getBoolean("widget_is_reacted", false)
+        val widgetData = HomeWidgetPlugin.getData(context)
+        val appWidgetManager = AppWidgetManager.getInstance(context)
+        val componentName = ComponentName(context, UpdateMeWidgetProvider::class.java)
+        val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
 
-            Log.d(TAG, "Reaction intent received for updateId: $updateId, isAlreadyReacted: $isAlreadyReacted")
-
-            // Strict Rule: Once reacted, it CANNOT be unreacted
-            if (isAlreadyReacted || updateId.isNullOrEmpty()) {
-                Log.d(TAG, "Moment is already reacted or updateId is missing. Ignoring.")
-                return
+        when (intent.action) {
+            ACTION_PREV_MOMENT -> {
+                val momentsJson = widgetData.getString("widget_moments_json", null)
+                if (!momentsJson.isNullOrEmpty()) {
+                    try {
+                        val jsonArray = JSONArray(momentsJson)
+                        if (jsonArray.length() > 1) {
+                            var currentIndex = widgetData.getInt("widget_current_index", jsonArray.length() - 1)
+                            currentIndex = if (currentIndex <= 0) jsonArray.length() - 1 else currentIndex - 1
+                            widgetData.edit().putInt("widget_current_index", currentIndex).apply()
+                            onUpdate(context, appWidgetManager, appWidgetIds, widgetData)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error in PREV_MOMENT: ${e.message}")
+                    }
+                }
             }
 
-            // 1. Immediately mark reacted in local SharedPreferences for zero-latency UI feedback
-            widgetData.edit().putBoolean("widget_is_reacted", true).apply()
-
-            // 2. Trigger widget view redraw on all instances
-            val appWidgetManager = AppWidgetManager.getInstance(context)
-            val componentName = ComponentName(context, UpdateMeWidgetProvider::class.java)
-            val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
-            onUpdate(context, appWidgetManager, appWidgetIds, widgetData)
-
-            // 3. Perform asynchronous PATCH to backend worker in background thread
-            thread {
-                try {
-                    val url = URL("$BACKEND_URL/api/updates/$updateId/react")
-                    val conn = url.openConnection() as HttpURLConnection
-                    conn.requestMethod = "PATCH"
-                    conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-                    conn.doOutput = true
-                    conn.connectTimeout = 10000
-                    conn.readTimeout = 10000
-
-                    val jsonPayload = JSONObject().apply {
-                        put("isReacted", true)
+            ACTION_NEXT_MOMENT -> {
+                val momentsJson = widgetData.getString("widget_moments_json", null)
+                if (!momentsJson.isNullOrEmpty()) {
+                    try {
+                        val jsonArray = JSONArray(momentsJson)
+                        if (jsonArray.length() > 1) {
+                            var currentIndex = widgetData.getInt("widget_current_index", jsonArray.length() - 1)
+                            currentIndex = if (currentIndex >= jsonArray.length() - 1) 0 else currentIndex + 1
+                            widgetData.edit().putInt("widget_current_index", currentIndex).apply()
+                            onUpdate(context, appWidgetManager, appWidgetIds, widgetData)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error in NEXT_MOMENT: ${e.message}")
                     }
+                }
+            }
 
-                    OutputStreamWriter(conn.outputStream).use { writer ->
-                        writer.write(jsonPayload.toString())
-                        writer.flush()
+            ACTION_REACT_MOMENT -> {
+                val updateId = widgetData.getString("widget_update_id", null)
+                val isAlreadyReacted = widgetData.getBoolean("widget_is_reacted", false)
+
+                Log.d(TAG, "Reaction intent received for updateId: $updateId, isAlreadyReacted: $isAlreadyReacted")
+
+                // Strict Rule: Once reacted, it CANNOT be unreacted
+                if (isAlreadyReacted || updateId.isNullOrEmpty()) {
+                    Log.d(TAG, "Moment is already reacted or updateId is missing. Ignoring.")
+                    return
+                }
+
+                // 1. Immediately mark reacted in local SharedPreferences for zero-latency UI feedback
+                widgetData.edit().putBoolean("widget_is_reacted", true).apply()
+
+                // Also update the item in moments JSON array if present
+                val momentsJson = widgetData.getString("widget_moments_json", null)
+                if (!momentsJson.isNullOrEmpty()) {
+                    try {
+                        val jsonArray = JSONArray(momentsJson)
+                        val currentIndex = widgetData.getInt("widget_current_index", jsonArray.length() - 1)
+                        if (currentIndex in 0 until jsonArray.length()) {
+                            val obj = jsonArray.getJSONObject(currentIndex)
+                            obj.put("is_reacted", true)
+                            jsonArray.put(currentIndex, obj)
+                            widgetData.edit().putString("widget_moments_json", jsonArray.toString()).apply()
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error updating json array reaction: ${e.message}")
                     }
+                }
 
-                    val responseCode = conn.responseCode
-                    Log.d(TAG, "Backend reacted response code: $responseCode")
-                    conn.disconnect()
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to send reaction to backend: ${e.message}", e)
+                // 2. Trigger widget view redraw on all instances
+                onUpdate(context, appWidgetManager, appWidgetIds, widgetData)
+
+                // 3. Perform asynchronous PATCH to backend worker in background thread
+                thread {
+                    try {
+                        val url = URL("$BACKEND_URL/api/updates/$updateId/react")
+                        val conn = url.openConnection() as HttpURLConnection
+                        conn.requestMethod = "PATCH"
+                        conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                        conn.doOutput = true
+                        conn.connectTimeout = 10000
+                        conn.readTimeout = 10000
+
+                        val jsonPayload = JSONObject().apply {
+                            put("isReacted", true)
+                        }
+
+                        OutputStreamWriter(conn.outputStream).use { writer ->
+                            writer.write(jsonPayload.toString())
+                            writer.flush()
+                        }
+
+                        val responseCode = conn.responseCode
+                        Log.d(TAG, "Backend reacted response code: $responseCode")
+                        conn.disconnect()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to send reaction to backend: ${e.message}", e)
+                    }
                 }
             }
         }
@@ -87,6 +144,46 @@ class UpdateMeWidgetProvider : HomeWidgetProvider() {
         appWidgetIds: IntArray,
         widgetData: android.content.SharedPreferences
     ) {
+        val hasUpdate = widgetData.getBoolean("widget_has_update", false)
+        val momentsJson = widgetData.getString("widget_moments_json", null)
+
+        var totalMoments = 1
+        var activeIndex = 0
+        var imagePath = widgetData.getString("widget_image_path", null)
+        var caption = widgetData.getString("widget_caption", null)
+        var location = widgetData.getString("widget_location", null)
+        var time = widgetData.getString("widget_time", null)
+        var isReacted = widgetData.getBoolean("widget_is_reacted", false)
+        var currentUpdateId = widgetData.getString("widget_update_id", null)
+
+        if (!momentsJson.isNullOrEmpty()) {
+            try {
+                val jsonArray = JSONArray(momentsJson)
+                totalMoments = jsonArray.length()
+                if (totalMoments > 0) {
+                    activeIndex = widgetData.getInt("widget_current_index", totalMoments - 1)
+                    if (activeIndex < 0 || activeIndex >= totalMoments) {
+                        activeIndex = totalMoments - 1
+                    }
+                    val currentObj = jsonArray.getJSONObject(activeIndex)
+                    currentUpdateId = currentObj.optString("id", currentUpdateId)
+                    imagePath = currentObj.optString("image_path", imagePath)
+                    caption = currentObj.optString("caption", caption)
+                    location = currentObj.optString("location", location)
+                    time = currentObj.optString("time", time)
+                    isReacted = currentObj.optBoolean("is_reacted", false)
+
+                    // Write current active id and reaction state to top level
+                    widgetData.edit()
+                        .putString("widget_update_id", currentUpdateId)
+                        .putBoolean("widget_is_reacted", isReacted)
+                        .apply()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error parsing momentsJson: ${e.message}")
+            }
+        }
+
         for (appWidgetId in appWidgetIds) {
             val views = RemoteViews(context.packageName, R.layout.update_me_widget)
 
@@ -102,18 +199,15 @@ class UpdateMeWidgetProvider : HomeWidgetProvider() {
             )
             views.setOnClickPendingIntent(R.id.widget_root, pendingAppIntent)
 
-            // 2. Read metadata stored via HomeWidget in Flutter
-            val imagePath = widgetData.getString("widget_image_path", null)
-            val caption = widgetData.getString("widget_caption", null)
-            val location = widgetData.getString("widget_location", null)
-            val time = widgetData.getString("widget_time", null)
-            val hasUpdate = widgetData.getBoolean("widget_has_update", false)
-            val isReacted = widgetData.getBoolean("widget_is_reacted", false)
-
             if (hasUpdate && !imagePath.isNullOrEmpty() && File(imagePath).exists()) {
                 try {
                     val bitmap = BitmapFactory.decodeFile(imagePath)
                     if (bitmap != null) {
+                        // Ambient background fill (no gaps)
+                        views.setImageViewBitmap(R.id.widget_blur_bg, bitmap)
+                        views.setViewVisibility(R.id.widget_blur_bg, View.VISIBLE)
+
+                        // Main photo (preserves full vertical height)
                         views.setImageViewBitmap(R.id.widget_image, bitmap)
                         views.setViewVisibility(R.id.widget_image, View.VISIBLE)
                         views.setViewVisibility(R.id.widget_empty_state, View.GONE)
@@ -127,7 +221,7 @@ class UpdateMeWidgetProvider : HomeWidgetProvider() {
                 showEmptyState(views)
             }
 
-            // 3. Location Badge
+            // 2. Location Badge
             if (!location.isNullOrEmpty()) {
                 views.setTextViewText(R.id.widget_location_badge, location.uppercase())
                 views.setViewVisibility(R.id.widget_location_badge, View.VISIBLE)
@@ -136,27 +230,56 @@ class UpdateMeWidgetProvider : HomeWidgetProvider() {
                 views.setViewVisibility(R.id.widget_location_badge, View.VISIBLE)
             }
 
-            // 4. Time Badge
+            // 3. Navigation Controls (< and >)
+            if (totalMoments > 1) {
+                views.setViewVisibility(R.id.widget_nav_container, View.VISIBLE)
+                views.setTextViewText(R.id.widget_counter, "${activeIndex + 1}/$totalMoments")
+
+                // Prev Intent
+                val prevIntent = Intent(context, UpdateMeWidgetProvider::class.java).apply {
+                    action = ACTION_PREV_MOMENT
+                }
+                val pendingPrev = PendingIntent.getBroadcast(
+                    context,
+                    appWidgetId + 3000,
+                    prevIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                views.setOnClickPendingIntent(R.id.widget_prev_btn, pendingPrev)
+
+                // Next Intent
+                val nextIntent = Intent(context, UpdateMeWidgetProvider::class.java).apply {
+                    action = ACTION_NEXT_MOMENT
+                }
+                val pendingNext = PendingIntent.getBroadcast(
+                    context,
+                    appWidgetId + 4000,
+                    nextIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                views.setOnClickPendingIntent(R.id.widget_next_btn, pendingNext)
+            } else {
+                views.setViewVisibility(R.id.widget_nav_container, View.GONE)
+            }
+
+            // 4. Caption & Time Overlay
+            if (!caption.isNullOrEmpty()) {
+                views.setTextViewText(R.id.widget_caption, caption)
+            } else {
+                views.setTextViewText(R.id.widget_caption, "")
+            }
+
             if (!time.isNullOrEmpty()) {
                 views.setTextViewText(R.id.widget_time_badge, time)
                 views.setViewVisibility(R.id.widget_time_badge, View.VISIBLE)
             } else {
                 views.setViewVisibility(R.id.widget_time_badge, View.GONE)
             }
+            views.setViewVisibility(R.id.widget_bottom_overlay, View.VISIBLE)
 
-            // 5. Caption Overlay
-            if (!caption.isNullOrEmpty()) {
-                views.setTextViewText(R.id.widget_caption, caption)
-                views.setViewVisibility(R.id.widget_bottom_overlay, View.VISIBLE)
-            } else {
-                views.setTextViewText(R.id.widget_caption, "")
-                views.setViewVisibility(R.id.widget_bottom_overlay, View.VISIBLE)
-            }
-
-            // 6. React Button State & Click Intent
+            // 5. React Button State & Click Intent
             if (isReacted) {
                 views.setImageViewResource(R.id.widget_react_btn, R.drawable.ic_heart_filled)
-                // Cannot be unreacted once true: pass empty/null pending intent or non-react intent
                 val disabledIntent = Intent(context, MainActivity::class.java)
                 val pendingDisabled = PendingIntent.getActivity(
                     context,
@@ -185,7 +308,9 @@ class UpdateMeWidgetProvider : HomeWidgetProvider() {
 
     private fun showEmptyState(views: RemoteViews) {
         views.setViewVisibility(R.id.widget_image, View.GONE)
+        views.setViewVisibility(R.id.widget_blur_bg, View.GONE)
         views.setViewVisibility(R.id.widget_bottom_overlay, View.GONE)
+        views.setViewVisibility(R.id.widget_nav_container, View.GONE)
         views.setViewVisibility(R.id.widget_empty_state, View.VISIBLE)
     }
 }

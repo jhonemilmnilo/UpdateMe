@@ -61,9 +61,9 @@ class _PairedHomeViewState extends State<PairedHomeView> {
           _isLoadingMoments = false;
         });
 
-        // Automatically update the Android Home Screen Widget with the latest received moment
+        // Automatically update the Android Home Screen Widget with today's received moments
         if (_receivedMoments.isNotEmpty) {
-          _widgetSyncService.syncLatestMomentToWidget(moment: _receivedMoments.last);
+          _widgetSyncService.syncMomentsListToWidget(moments: _receivedMoments);
         }
       }
     } catch (e) {

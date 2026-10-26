@@ -41,6 +41,8 @@
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="com.example.update_me.ACTION_REACT_MOMENT" />
+                <action android:name="com.example.update_me.ACTION_PREV_MOMENT" />
+                <action android:name="com.example.update_me.ACTION_NEXT_MOMENT" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"

@@ -32,15 +32,17 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
   void initState() {
     super.initState();
     _currentUpdates = List.from(widget.updates);
-    _pageController = PageController(initialPage: 0);
+    _currentPageIndex = _currentUpdates.isNotEmpty ? _currentUpdates.length - 1 : 0;
+    _pageController = PageController(initialPage: _currentPageIndex);
   }
 
   @override
   void didUpdateWidget(covariant DailyMomentsStackDeck oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.updates != widget.updates) {
+      final wasAtEnd = _currentPageIndex >= _currentUpdates.length - 1;
       _currentUpdates = List.from(widget.updates);
-      if (_currentPageIndex >= _currentUpdates.length) {
+      if (wasAtEnd || _currentPageIndex >= _currentUpdates.length) {
         _currentPageIndex = (_currentUpdates.length - 1).clamp(0, _currentUpdates.length);
         if (_pageController.hasClients) {
           _pageController.jumpToPage(_currentPageIndex);
@@ -205,6 +207,46 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
                 ),
               ),
             ),
+
+            // Left & Right Tap Zones (Instagram Story style navigation)
+            if (_currentUpdates.length > 1) ...[
+              // Left Tap Zone (Previous moment)
+              Positioned(
+                top: 70,
+                bottom: 120,
+                left: 0,
+                width: 80,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () {
+                    if (_pageController.hasClients && _currentPageIndex > 0) {
+                      _pageController.previousPage(
+                        duration: const Duration(milliseconds: 260),
+                        curve: Curves.easeOutCubic,
+                      );
+                    }
+                  },
+                ),
+              ),
+              // Right Tap Zone (Next moment)
+              Positioned(
+                top: 70,
+                bottom: 120,
+                right: 0,
+                width: 80,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () {
+                    if (_pageController.hasClients && _currentPageIndex < _currentUpdates.length - 1) {
+                      _pageController.nextPage(
+                        duration: const Duration(milliseconds: 260),
+                        curve: Curves.easeOutCubic,
+                      );
+                    }
+                  },
+                ),
+              ),
+            ],
 
             // Story Progress Dashes (Top Edge, synchronized with active page)
             if (_currentUpdates.length > 1)
