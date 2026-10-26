@@ -438,6 +438,8 @@ app.post('/api/updates', async (c) => {
 
         if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
           c.executionCtx.waitUntil(pushPromise)
+        } else {
+          await pushPromise
         }
       }
     } catch (pushErr) {
@@ -594,6 +596,8 @@ app.patch('/api/updates/:id/react', async (c) => {
 
           if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
             c.executionCtx.waitUntil(reactionPushPromise)
+          } else {
+            await reactionPushPromise
           }
         }
       } catch (pushErr) {

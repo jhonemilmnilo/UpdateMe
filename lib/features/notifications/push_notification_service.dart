@@ -15,10 +15,11 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   // If payload contains moment data, automatically sync to Android Home Screen Widget in the background!
   final data = message.data;
-  if (data.containsKey('imageUrl') && data.containsKey('id')) {
+  final momentId = data['updateId'] ?? data['id'];
+  if (data.containsKey('imageUrl') && momentId != null) {
     try {
       final moment = UpdateModel(
-        id: data['id'] ?? '',
+        id: momentId,
         senderId: data['senderId'] ?? '',
         receiverId: data['receiverId'] ?? '',
         imageUrl: data['imageUrl'] ?? '',
@@ -53,6 +54,7 @@ class PushNotificationService {
         alert: true,
         badge: true,
         sound: true,
+        provisional: false,
       );
 
       // Set foreground notification options so heads-up alerts display even while app is open
@@ -82,9 +84,10 @@ class PushNotificationService {
         debugPrint('[FCM Foreground] Received: ${message.notification?.title} - ${message.notification?.body}');
 
         final data = message.data;
-        if (data.containsKey('imageUrl') && data.containsKey('id')) {
+        final momentId = data['updateId'] ?? data['id'];
+        if (data.containsKey('imageUrl') && momentId != null) {
           final moment = UpdateModel(
-            id: data['id'] ?? '',
+            id: momentId,
             senderId: data['senderId'] ?? '',
             receiverId: data['receiverId'] ?? '',
             imageUrl: data['imageUrl'] ?? '',

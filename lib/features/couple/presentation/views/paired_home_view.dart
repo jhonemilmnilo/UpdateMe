@@ -24,7 +24,7 @@ class PairedHomeView extends StatefulWidget {
   State<PairedHomeView> createState() => _PairedHomeViewState();
 }
 
-class _PairedHomeViewState extends State<PairedHomeView> {
+class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObserver {
   final ImagePicker _imagePicker = ImagePicker();
   final UpdateService _updateService = UpdateService();
   final WidgetSyncService _widgetSyncService = WidgetSyncService();
@@ -40,12 +40,22 @@ class _PairedHomeViewState extends State<PairedHomeView> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadTodayMoments();
     _subscribeToRealtimeUpdates();
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('[PairedHomeView] App resumed. Re-fetching moments & syncing widget...');
+      _loadTodayMoments(isBackgroundSync: true);
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _updatesChannel?.unsubscribe();
     super.dispose();
   }
@@ -67,6 +77,14 @@ class _PairedHomeViewState extends State<PairedHomeView> {
           )
           .subscribe((status, [error]) {
             debugPrint('[Realtime] Channel status: $status, error: $error');
+            if (status == RealtimeSubscribeStatus.channelError && mounted) {
+              debugPrint('[Realtime] Channel encountered error. Scheduling auto-reconnect in 4s...');
+              Future.delayed(const Duration(seconds: 4), () {
+                if (mounted) {
+                  _subscribeToRealtimeUpdates();
+                }
+              });
+            }
           });
       debugPrint('[Realtime] Subscribed to Updates table live channel! ⚡');
     } catch (e) {
@@ -123,16 +141,21 @@ class _PairedHomeViewState extends State<PairedHomeView> {
       );
 
       if (photo != null && mounted) {
-        SendUpdateModal.show(
+        await SendUpdateModal.show(
           context: context,
           initialImage: File(photo.path),
           onUpdateSent: () {
-            setState(() {
-              _selectedTabIndex = 1; // Switch to Sent Moments tab
-            });
-            _loadTodayMoments();
+            if (mounted) {
+              setState(() {
+                _selectedTabIndex = 1; // Switch to Sent Moments tab
+              });
+              _loadTodayMoments();
+            }
           },
         );
+        if (mounted) {
+          _loadTodayMoments();
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -201,6 +224,7 @@ class _PairedHomeViewState extends State<PairedHomeView> {
                   )
                 else
                   DailyMomentsStackDeck(
+                    key: ValueKey('deck_${_selectedTabIndex}_${currentList.length}_${currentList.isNotEmpty ? currentList.last.id : "empty"}'),
                     updates: currentList,
                     emptyMessage: emptyMessage,
                     currentUserId: widget.user.id,
