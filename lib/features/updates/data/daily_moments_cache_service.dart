@@ -20,16 +20,21 @@ class DailyMomentsCacheService {
     return cacheDir;
   }
 
-  /// Checks if two DateTimes fall on the exact same local calendar day
-  bool _isSameCalendarDay(DateTime a, DateTime b) {
-    final localA = a.toLocal();
-    final localB = b.toLocal();
+  /// Checks if a moment is within the recent 24-hour window or local calendar day
+  bool _isWithinRecentWindow(DateTime dt, DateTime now) {
+    // 1. Any moment within the last 24 hours is valid (matches backend window)
+    if (now.difference(dt.toLocal()).inHours.abs() < 24) {
+      return true;
+    }
+    // 2. Also valid if it falls on the exact same local calendar day
+    final localA = dt.toLocal();
+    final localB = now.toLocal();
     return localA.year == localB.year &&
         localA.month == localB.month &&
         localA.day == localB.day;
   }
 
-  /// Purges any cached images or metadata files that are NOT from today
+  /// Purges any cached images or metadata files that are older than 24 hours
   Future<void> purgeOutdatedMoments() async {
     try {
       final cacheDir = await _getCacheDir();
@@ -44,10 +49,10 @@ class DailyMomentsCacheService {
             try {
               final content = await entity.readAsString();
               final List list = jsonDecode(content);
-              // Filter out items not matching today
+              // Filter out items older than 24h
               final todayItems = list.where((itemJson) {
-                final dt = DateTime.parse(itemJson['created_at']).toLocal();
-                return _isSameCalendarDay(dt, now);
+                final dt = DateTime.parse(itemJson['created_at']);
+                return _isWithinRecentWindow(dt, now);
               }).toList();
 
               if (todayItems.isEmpty) {
@@ -63,7 +68,7 @@ class DailyMomentsCacheService {
           } else if (entity.path.endsWith('.jpg')) {
             // For jpg files, check last modified time
             final stat = await entity.stat();
-            if (!_isSameCalendarDay(stat.modified, now)) {
+            if (!_isWithinRecentWindow(stat.modified, now)) {
               await entity.delete();
               deletedCount++;
             }
@@ -122,26 +127,38 @@ class DailyMomentsCacheService {
       final cacheDir = await _getCacheDir();
       final now = DateTime.now();
 
-      // Only preserve today's moments
+      // Read existing cached items to merge without dropping
+      final existingCached = await getTodayCachedMoments(type: type);
+      final Map<String, UpdateModel> mergedMap = {
+        for (final m in existingCached) m.id: m,
+      };
+
+      // Only preserve moments within the valid recent window (24h or today)
       final todayMoments = moments
-          .where((m) => _isSameCalendarDay(m.createdAt, now))
+          .where((m) => _isWithinRecentWindow(m.createdAt, now))
           .toList();
 
-      final List<UpdateModel> localizedMoments = [];
+      // 1. Download images in parallel so all moments are cached fast without blocking
+      await Future.wait(
+        todayMoments.map((m) async {
+          final existing = mergedMap[m.id];
+          String effectiveImageUrl = existing?.imageUrl ?? m.imageUrl;
 
-      for (final m in todayMoments) {
-        String effectiveImageUrl = m.imageUrl;
-        if (effectiveImageUrl.startsWith('http')) {
-          final cachedPath = await cacheImageLocally(
-            updateId: m.id,
-            remoteUrl: m.imageUrl,
-          );
-          if (cachedPath != null) {
-            effectiveImageUrl = cachedPath;
+          if (effectiveImageUrl.startsWith('http')) {
+            final cachedPath = await cacheImageLocally(
+              updateId: m.id,
+              remoteUrl: m.imageUrl,
+            );
+            if (cachedPath != null) {
+              effectiveImageUrl = cachedPath;
+            }
           }
-        }
-        localizedMoments.add(m.copyWith(imageUrl: effectiveImageUrl));
-      }
+          mergedMap[m.id] = m.copyWith(imageUrl: effectiveImageUrl);
+        }),
+      );
+
+      final localizedMoments = mergedMap.values.toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
       // Save localized metadata JSON
       final metaFile = File('${cacheDir.path}/cache_$type.json');
@@ -176,11 +193,8 @@ class DailyMomentsCacheService {
       final List<UpdateModel> validToday = [];
       for (final item in list) {
         final model = UpdateModel.fromJson(item as Map<String, dynamic>);
-        if (_isSameCalendarDay(model.createdAt, now)) {
-          // If image file exists locally, use it; otherwise preserve url
-          if (model.isLocalImage && !await File(model.imageUrl).exists()) {
-            continue;
-          }
+        if (_isWithinRecentWindow(model.createdAt, now)) {
+          // Never drop a moment even if its local image is still downloading or pending!
           validToday.add(model);
         }
       }

@@ -15,13 +15,9 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final AuthService _authService = AuthService();
   bool _isLoadingGoogle = false;
-  String? _errorMessage;
 
   Future<void> _signInWithGoogle() async {
-    setState(() {
-      _isLoadingGoogle = true;
-      _errorMessage = null;
-    });
+    setState(() => _isLoadingGoogle = true);
 
     try {
       final user = await _authService.signInWithGoogle();
@@ -52,16 +48,27 @@ class _LoginScreenState extends State<LoginScreen> {
       debugPrint('[GoogleSignIn Error]: $e');
       debugPrint('[GoogleSignIn Stack]: $stack');
       if (mounted) {
-        setState(() {
-          _isLoadingGoogle = false;
-          final errorStr = e.toString();
-          if (errorStr.contains('aborted') || errorStr.contains('cancelled') || errorStr.contains('canceled')) {
-            _errorMessage = null;
-          } else {
-            _errorMessage = errorStr.replaceAll('Exception: ', '');
-            AppToast.error(context, _errorMessage!);
-          }
-        });
+        setState(() => _isLoadingGoogle = false);
+        final errorStr = e.toString();
+        if (errorStr.contains('aborted') ||
+            errorStr.contains('cancelled') ||
+            errorStr.contains('canceled')) {
+          // User intentionally closed the popup, do nothing
+          return;
+        }
+
+        if (errorStr.contains('SocketException') ||
+            errorStr.contains('Failed host lookup') ||
+            errorStr.contains('ClientException') ||
+            errorStr.contains('errno = 7')) {
+          AppToast.error(
+            context,
+            'No internet connection. Please check your network and try again.',
+          );
+        } else {
+          final cleanMsg = errorStr.replaceAll('Exception: ', '');
+          AppToast.error(context, cleanMsg);
+        }
       }
     }
   }
@@ -108,20 +115,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
 
               const SizedBox(height: 40),
-
-              // Error notification if any (Pure typography, no card)
-              if (_errorMessage != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: Text(
-                    _errorMessage!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Color(0xFFEF9A9A),
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
 
               // Primary Action: Continue with Google (Centered, No Icons)
               SizedBox(

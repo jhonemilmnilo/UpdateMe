@@ -71,9 +71,9 @@ class WidgetSyncService {
 
       final jsonString = jsonEncode(cachedList);
 
-      // Preserve active viewing index if valid, otherwise point to latest
+      // Default to 0 (index 0 is the newest/most recent moment)
       final existingIndex = await HomeWidget.getWidgetData<int>('widget_current_index');
-      int targetIndex = cachedList.length - 1;
+      int targetIndex = 0;
       if (existingIndex != null && existingIndex >= 0 && existingIndex < cachedList.length) {
         targetIndex = existingIndex;
       }

@@ -168,9 +168,9 @@ class UpdateMeWidgetProvider : HomeWidgetProvider() {
                 val jsonArray = JSONArray(momentsJson)
                 totalMoments = jsonArray.length()
                 if (totalMoments > 0) {
-                    activeIndex = widgetData.getInt("widget_current_index", totalMoments - 1)
+                    activeIndex = widgetData.getInt("widget_current_index", 0)
                     if (activeIndex < 0 || activeIndex >= totalMoments) {
-                        activeIndex = totalMoments - 1
+                        activeIndex = 0
                     }
                     val currentObj = jsonArray.getJSONObject(activeIndex)
                     currentUpdateId = currentObj.optString("id", currentUpdateId)

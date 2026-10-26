@@ -12,6 +12,7 @@ import '../../../updates/data/update_model.dart';
 import '../../../updates/data/update_service.dart';
 import '../../../updates/data/widget_sync_service.dart';
 import '../../../updates/presentation/modals/send_update_modal.dart';
+import '../../../updates/presentation/widgets/daily_moment_skeleton_deck.dart';
 import '../../../updates/presentation/widgets/daily_moments_stack_deck.dart';
 import '../../../updates/presentation/widgets/moments_tab_bar.dart';
 
@@ -34,6 +35,7 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
 
   int _selectedTabIndex = 0; // 0: From Partner, 1: Sent Moments
   bool _isLoadingMoments = true;
+  bool _isUserRefreshing = false;
   List<UpdateModel> _receivedMoments = [];
   List<UpdateModel> _sentMoments = [];
   bool _isOpeningCamera = false;
@@ -154,7 +156,8 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
           // Newest first! Newest/pending moment is always index 0 (bungad sa user)
           immediateSent.sort((a, b) => b.createdAt.compareTo(a.createdAt));
           _sentMoments = immediateSent;
-          if (_receivedMoments.isNotEmpty || _sentMoments.isNotEmpty) {
+          // Only dismiss loader early if it's an ambient background sync
+          if (isBackgroundSync) {
             _isLoadingMoments = false;
           }
         });
@@ -285,8 +288,18 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
         // Main Scrollable Area
         RefreshIndicator(
           onRefresh: () async {
+            if (mounted) {
+              setState(() => _isUserRefreshing = true);
+            }
             SyncEngine().processQueue();
-            await _loadTodayMoments();
+            // Run network revalidation along with a smooth minimum shimmer window (700ms)
+            await Future.wait([
+              _loadTodayMoments(),
+              Future.delayed(const Duration(milliseconds: 700)),
+            ]);
+            if (mounted) {
+              setState(() => _isUserRefreshing = false);
+            }
           },
           color: AppColors.primaryAccent,
           backgroundColor: AppColors.secondarySurface,
@@ -318,24 +331,22 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
                 ),
                 const SizedBox(height: 20),
 
-                // Layered Stacked Cards Deck
-                if (_isLoadingMoments)
-                  const SizedBox(
-                    height: 320,
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: AppColors.primaryAccent,
-                      ),
-                    ),
-                  )
-                else
-                  DailyMomentsStackDeck(
-                    key: ValueKey('deck_$_selectedTabIndex'),
-                    updates: currentList,
-                    emptyMessage: emptyMessage,
-                    currentUserId: widget.user.id,
-                  ),
+                // Layered Stacked Cards Deck with Ultra-Smooth Shimmer Skeleton Transition
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 320),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  child: (_isUserRefreshing || _isLoadingMoments)
+                      ? const DailyMomentSkeletonDeck(
+                          key: ValueKey('skeleton_deck'),
+                        )
+                      : DailyMomentsStackDeck(
+                          key: ValueKey('deck_$_selectedTabIndex'),
+                          updates: currentList,
+                          emptyMessage: emptyMessage,
+                          currentUserId: widget.user.id,
+                        ),
+                ),
               ],
             ),
           ),
