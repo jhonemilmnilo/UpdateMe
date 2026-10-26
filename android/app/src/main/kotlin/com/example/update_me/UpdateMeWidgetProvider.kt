@@ -187,15 +187,12 @@ class UpdateMeWidgetProvider : HomeWidgetProvider() {
         for (appWidgetId in appWidgetIds) {
             val views = RemoteViews(context.packageName, R.layout.update_me_widget)
 
-            // 1. PendingIntent to launch app when tapping root area
-            val appIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            }
-            val pendingAppIntent = PendingIntent.getActivity(
+            // 1. PendingIntent to launch app and deep-link to Fullscreen Viewer when tapping root area
+            val deepLinkUri = android.net.Uri.parse("updateme://moment?id=${currentUpdateId ?: ""}&index=$activeIndex")
+            val pendingAppIntent = es.antonborri.home_widget.HomeWidgetLaunchIntent.getActivity(
                 context,
-                0,
-                appIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                MainActivity::class.java,
+                deepLinkUri
             )
             views.setOnClickPendingIntent(R.id.widget_root, pendingAppIntent)
 
@@ -230,12 +227,14 @@ class UpdateMeWidgetProvider : HomeWidgetProvider() {
                 views.setViewVisibility(R.id.widget_location_badge, View.VISIBLE)
             }
 
-            // 3. Navigation Controls (< and >)
+            // 3. Navigation Controls (< on left edge, > on right edge)
             if (totalMoments > 1) {
-                views.setViewVisibility(R.id.widget_nav_container, View.VISIBLE)
+                views.setViewVisibility(R.id.widget_counter, View.VISIBLE)
+                views.setViewVisibility(R.id.widget_prev_btn, View.VISIBLE)
+                views.setViewVisibility(R.id.widget_next_btn, View.VISIBLE)
                 views.setTextViewText(R.id.widget_counter, "${activeIndex + 1}/$totalMoments")
 
-                // Prev Intent
+                // Prev Intent (Left button)
                 val prevIntent = Intent(context, UpdateMeWidgetProvider::class.java).apply {
                     action = ACTION_PREV_MOMENT
                 }
@@ -247,7 +246,7 @@ class UpdateMeWidgetProvider : HomeWidgetProvider() {
                 )
                 views.setOnClickPendingIntent(R.id.widget_prev_btn, pendingPrev)
 
-                // Next Intent
+                // Next Intent (Right button)
                 val nextIntent = Intent(context, UpdateMeWidgetProvider::class.java).apply {
                     action = ACTION_NEXT_MOMENT
                 }
@@ -259,7 +258,9 @@ class UpdateMeWidgetProvider : HomeWidgetProvider() {
                 )
                 views.setOnClickPendingIntent(R.id.widget_next_btn, pendingNext)
             } else {
-                views.setViewVisibility(R.id.widget_nav_container, View.GONE)
+                views.setViewVisibility(R.id.widget_counter, View.GONE)
+                views.setViewVisibility(R.id.widget_prev_btn, View.GONE)
+                views.setViewVisibility(R.id.widget_next_btn, View.GONE)
             }
 
             // 4. Caption & Time Overlay
@@ -310,7 +311,9 @@ class UpdateMeWidgetProvider : HomeWidgetProvider() {
         views.setViewVisibility(R.id.widget_image, View.GONE)
         views.setViewVisibility(R.id.widget_blur_bg, View.GONE)
         views.setViewVisibility(R.id.widget_bottom_overlay, View.GONE)
-        views.setViewVisibility(R.id.widget_nav_container, View.GONE)
+        views.setViewVisibility(R.id.widget_prev_btn, View.GONE)
+        views.setViewVisibility(R.id.widget_next_btn, View.GONE)
+        views.setViewVisibility(R.id.widget_counter, View.GONE)
         views.setViewVisibility(R.id.widget_empty_state, View.VISIBLE)
     }
 }

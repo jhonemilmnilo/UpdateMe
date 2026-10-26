@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../data/update_model.dart';
 import '../../data/update_service.dart';
+import '../views/fullscreen_moments_viewer_screen.dart';
 
 class DailyMomentsStackDeck extends StatefulWidget {
   final List<UpdateModel> updates;
@@ -55,11 +56,14 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
     if (index >= _currentUpdates.length) return;
 
     final item = _currentUpdates[index];
-    // Guard: Only receiver can react! Sender cannot react to their own moment.
+    // Guard 1: Only receiver can react! Sender cannot react to their own moment.
     if (item.senderId == widget.currentUserId) return;
 
+    // Guard 2: One-way reaction rule: Once reacted, it CANNOT be unreacted
+    if (item.isReacted) return;
+
     HapticFeedback.mediumImpact();
-    final newReactionState = !item.isReacted;
+    const newReactionState = true;
 
     // Optimistic UI update
     setState(() {
@@ -160,6 +164,20 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
     return ClipRRect(
       borderRadius: BorderRadius.circular(32),
       child: GestureDetector(
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => FullscreenMomentsViewerScreen(
+                moments: _currentUpdates,
+                initialIndex: cardIndex,
+                currentUserId: widget.currentUserId,
+              ),
+            ),
+          ).then((_) {
+            // Re-sync local reaction updates if toggled in fullscreen
+            setState(() {});
+          });
+        },
         onDoubleTap: isSender ? null : () => _toggleHeart(cardIndex),
         child: Stack(
           fit: StackFit.expand,
