@@ -300,18 +300,25 @@ class _SendUpdateModalState extends State<SendUpdateModal> {
                     ),
                     const SizedBox(width: 8),
 
-                    // Embedded Send Action Button
+                    // Embedded Send Action Button (Instagram Direct style paper plane)
                     GestureDetector(
                       onTap: _isSending ? null : _handleSend,
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 150),
-                        width: 38,
-                        height: 38,
+                        width: 40,
+                        height: 40,
                         decoration: BoxDecoration(
                           color: _isSending
                               ? AppColors.supportingText.withValues(alpha: 0.3)
                               : AppColors.primaryAccent,
                           shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.25),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
                         ),
                         child: Center(
                           child: _isSending
@@ -323,13 +330,12 @@ class _SendUpdateModalState extends State<SendUpdateModal> {
                                     color: AppColors.textHighContrast,
                                   ),
                                 )
-                              : const Text(
-                                  '↑',
-                                  style: TextStyle(
+                              : const Padding(
+                                  padding: EdgeInsets.only(left: 3.0),
+                                  child: Icon(
+                                    Icons.send_rounded,
                                     color: AppColors.textHighContrast,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w700,
-                                    height: 1.1,
+                                    size: 19,
                                   ),
                                 ),
                         ),

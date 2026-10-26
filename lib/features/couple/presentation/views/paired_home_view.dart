@@ -7,7 +7,7 @@ import '../../../auth/data/auth_service.dart';
 import '../../../updates/data/update_model.dart';
 import '../../../updates/data/update_service.dart';
 import '../../../updates/presentation/modals/send_update_modal.dart';
-import '../../../updates/presentation/widgets/daily_moments_carousel.dart';
+import '../../../updates/presentation/widgets/daily_moments_stack_deck.dart';
 import '../../../updates/presentation/widgets/moments_tab_bar.dart';
 
 class PairedHomeView extends StatefulWidget {
@@ -107,103 +107,106 @@ class _PairedHomeViewState extends State<PairedHomeView> {
         ? 'No updates received from $partnerName yet today.'
         : 'You haven’t sent any moments today yet.';
 
-    return RefreshIndicator(
-      onRefresh: _loadTodayMoments,
-      color: AppColors.primaryAccent,
-      backgroundColor: AppColors.secondarySurface,
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.only(left: 24.0, right: 24.0, top: 8.0, bottom: 20.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header Typography
-            Text(
-              'Paired with\n$partnerName',
-              style: const TextStyle(
-                color: AppColors.textHighContrast,
-                fontSize: 30,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.6,
-                height: 1.2,
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Professional Moments Tab Bar (From Partner | Sent Moments)
-            MomentsTabBar(
-              selectedIndex: _selectedTabIndex,
-              onTabSelected: (index) {
-                setState(() => _selectedTabIndex = index);
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // Daily Carousel Area
-            if (_isLoadingMoments)
-              const SizedBox(
-                height: 320,
-                child: Center(
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.primaryAccent,
+    return Stack(
+      children: [
+        // Main Scrollable Area
+        RefreshIndicator(
+          onRefresh: _loadTodayMoments,
+          color: AppColors.primaryAccent,
+          backgroundColor: AppColors.secondarySurface,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.only(left: 24.0, right: 24.0, top: 8.0, bottom: 120.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header Typography
+                Text(
+                  'Paired with\n$partnerName',
+                  style: const TextStyle(
+                    color: AppColors.textHighContrast,
+                    fontSize: 30,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.6,
+                    height: 1.2,
                   ),
                 ),
-              )
-            else
-              DailyMomentsCarousel(
-                updates: currentList,
-                emptyMessage: emptyMessage,
-              ),
+                const SizedBox(height: 18),
 
-            const SizedBox(height: 24),
+                // Standalone Pill Buttons (From Partner | Sent Moments)
+                MomentsTabBar(
+                  selectedIndex: _selectedTabIndex,
+                  onTabSelected: (index) {
+                    setState(() => _selectedTabIndex = index);
+                  },
+                ),
+                const SizedBox(height: 20),
 
-            // Minimalist Floating Camera Action Button (Bottom-Right, 78x78 Flagship)
-            Align(
-              alignment: Alignment.bottomRight,
-              child: GestureDetector(
-                onTap: _isOpeningCamera ? null : _captureAndSendUpdate,
-                child: Container(
-                  width: 76,
-                  height: 76,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.primaryAccent,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.35),
-                        blurRadius: 18,
-                        offset: const Offset(0, 8),
+                // Layered Stacked Cards Deck
+                if (_isLoadingMoments)
+                  const SizedBox(
+                    height: 320,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.primaryAccent,
                       ),
-                    ],
-                    border: Border.all(
-                      color: AppColors.secondarySurface,
-                      width: 4,
                     ),
+                  )
+                else
+                  DailyMomentsStackDeck(
+                    updates: currentList,
+                    emptyMessage: emptyMessage,
                   ),
-                  child: Center(
-                    child: _isOpeningCamera
-                        ? const SizedBox(
-                            width: 26,
-                            height: 26,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: AppColors.textHighContrast,
-                            ),
-                          )
-                        : const Icon(
-                            Icons.camera_alt_rounded,
-                            color: AppColors.textHighContrast,
-                            size: 36,
-                          ),
+              ],
+            ),
+          ),
+        ),
+
+        // Pinned Bottom-Right Floating Camera Button
+        Positioned(
+          bottom: 24,
+          right: 24,
+          child: GestureDetector(
+            onTap: _isOpeningCamera ? null : _captureAndSendUpdate,
+            child: Container(
+              width: 76,
+              height: 76,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.primaryAccent,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.4),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
                   ),
+                ],
+                border: Border.all(
+                  color: AppColors.secondarySurface,
+                  width: 4,
                 ),
               ),
+              child: Center(
+                child: _isOpeningCamera
+                    ? const SizedBox(
+                        width: 26,
+                        height: 26,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: AppColors.textHighContrast,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.camera_alt_rounded,
+                        color: AppColors.textHighContrast,
+                        size: 36,
+                      ),
+              ),
             ),
-            const SizedBox(height: 14),
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 }
