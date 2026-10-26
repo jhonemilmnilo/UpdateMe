@@ -9,11 +9,13 @@ import '../../data/update_service.dart';
 class DailyMomentsStackDeck extends StatefulWidget {
   final List<UpdateModel> updates;
   final String emptyMessage;
+  final String currentUserId;
 
   const DailyMomentsStackDeck({
     super.key,
     required this.updates,
     required this.emptyMessage,
+    required this.currentUserId,
   });
 
   @override
@@ -50,8 +52,11 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
   Future<void> _toggleHeart(int index) async {
     if (index >= _currentUpdates.length) return;
 
-    HapticFeedback.mediumImpact();
     final item = _currentUpdates[index];
+    // Guard: Only receiver can react! Sender cannot react to their own moment.
+    if (item.senderId == widget.currentUserId) return;
+
+    HapticFeedback.mediumImpact();
     final newReactionState = !item.isReacted;
 
     // Optimistic UI update
