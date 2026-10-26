@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { createClient } from '@supabase/supabase-js'
+import { sendPushNotification } from './fcm'
 
 type Bindings = {
   SUPABASE_URL?: string
@@ -404,6 +405,45 @@ app.post('/api/updates', async (c) => {
       return c.json({ error: error.message }, 500)
     }
 
+    // Trigger high-priority push notification to partner's phone
+    try {
+      const { data: receiver } = await supabase
+        .from('User')
+        .select('fcm_token, display_name')
+        .eq('id', targetReceiverId)
+        .maybeSingle()
+
+      const { data: senderInfo } = await supabase
+        .from('User')
+        .select('display_name, email')
+        .eq('id', senderId)
+        .maybeSingle()
+
+      const senderDisplayName = senderInfo?.display_name || senderInfo?.email?.split('@')[0] || 'Your partner'
+
+      if (receiver && receiver.fcm_token) {
+        const pushPromise = sendPushNotification({
+          token: receiver.fcm_token,
+          title: 'UpdateMe 📸',
+          body: caption ? `${senderDisplayName}: "${caption}"` : `${senderDisplayName} posted a new moment!`,
+          data: {
+            type: 'new_moment',
+            updateId: newUpdate.id,
+            senderId: senderId,
+            imageUrl: imageUrl,
+            caption: caption || '',
+            locationName: locationName || '',
+          },
+        })
+
+        if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+          c.executionCtx.waitUntil(pushPromise)
+        }
+      }
+    } catch (pushErr) {
+      console.error('[FCM] Error triggering new moment push notification:', pushErr)
+    }
+
     return c.json({
       success: true,
       update: newUpdate
@@ -521,6 +561,44 @@ app.patch('/api/updates/:id/react', async (c) => {
 
     if (error) {
       return c.json({ error: error.message }, 500)
+    }
+
+    // Trigger high-priority push notification when reacted
+    if (isReacted && updated) {
+      try {
+        // Find the sender (author) of the moment and who reacted to it
+        const { data: author } = await supabase
+          .from('User')
+          .select('id, fcm_token')
+          .eq('id', updated.sender_id)
+          .maybeSingle()
+
+        const { data: reactor } = await supabase
+          .from('User')
+          .select('display_name, email')
+          .eq('id', updated.receiver_id)
+          .maybeSingle()
+
+        const reactorDisplayName = reactor?.display_name || reactor?.email?.split('@')[0] || 'Your partner'
+
+        if (author && author.fcm_token) {
+          const reactionPushPromise = sendPushNotification({
+            token: author.fcm_token,
+            title: 'UpdateMe ❤️',
+            body: `${reactorDisplayName} reacted to your moment!`,
+            data: {
+              type: 'heart_reaction',
+              updateId: updated.id,
+            },
+          })
+
+          if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+            c.executionCtx.waitUntil(reactionPushPromise)
+          }
+        }
+      } catch (pushErr) {
+        console.error('[FCM] Error sending reaction push notification:', pushErr)
+      }
     }
 
     return c.json({ success: true, update: updated })

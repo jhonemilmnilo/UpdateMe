@@ -55,6 +55,13 @@ class PushNotificationService {
         sound: true,
       );
 
+      // Set foreground notification options so heads-up alerts display even while app is open
+      await _fcm.setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
       debugPrint('[FCM] Permission status: ${settings.authorizationStatus}');
 
       // 2. Fetch unique device token
