@@ -124,6 +124,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         if (cachedJson != null && cachedJson.isNotEmpty) {
           final List list = jsonDecode(cachedJson);
           final List<UpdateModel> cachedMoments = list.map<UpdateModel>((item) {
+            DateTime itemCreatedAt = DateTime.now();
+            if (item['created_at'] != null) {
+              try {
+                itemCreatedAt = DateTime.parse(item['created_at'] as String).toLocal();
+              } catch (_) {}
+            }
+
             return UpdateModel(
               id: item['id'] as String,
               senderId: '', // placeholder, receiver viewing
@@ -133,7 +140,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               locationName: item['location'] as String?,
               isRead: true,
               isReacted: item['is_reacted'] as bool? ?? false,
-              createdAt: DateTime.now(),
+              createdAt: itemCreatedAt,
             );
           }).toList();
 

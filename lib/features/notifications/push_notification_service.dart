@@ -17,6 +17,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   final data = message.data;
   final momentId = data['updateId'] ?? data['id'];
   if (data.containsKey('imageUrl') && momentId != null) {
+    try {
       DateTime momentCreatedAt = DateTime.now();
       if (data['createdAt'] != null) {
         try {

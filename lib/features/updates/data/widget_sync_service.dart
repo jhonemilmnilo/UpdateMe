@@ -63,6 +63,7 @@ class WidgetSyncService {
               'location': moment.locationName ?? 'MOMENT',
               'time': phTimeString,
               'is_reacted': moment.isReacted,
+              'created_at': moment.createdAt.toIso8601String(),
             });
           }
         } catch (e) {
@@ -138,6 +139,7 @@ class WidgetSyncService {
         'location': moment.locationName ?? 'MOMENT',
         'time': phTimeString,
         'is_reacted': moment.isReacted,
+        'created_at': moment.createdAt.toIso8601String(),
       };
 
       // Retrieve existing cached carousel
