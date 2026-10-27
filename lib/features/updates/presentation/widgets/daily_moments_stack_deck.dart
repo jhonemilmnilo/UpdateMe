@@ -47,12 +47,17 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
   @override
   void didUpdateWidget(covariant DailyMomentsStackDeck oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final hasNewItem = widget.updates.length > oldWidget.updates.length;
+    final isDifferentLength = widget.updates.length != oldWidget.updates.length;
+    final isNewFirstItem = widget.updates.isNotEmpty &&
+        oldWidget.updates.isNotEmpty &&
+        widget.updates.first.id != oldWidget.updates.first.id;
+    final shouldResetToFirst = isDifferentLength || isNewFirstItem;
+
     setState(() {
       _currentUpdates = List.from(widget.updates);
       if (_currentUpdates.isEmpty) {
         _currentPageIndex = 0;
-      } else if (hasNewItem) {
+      } else if (shouldResetToFirst) {
         _currentPageIndex = 0;
       } else {
         _currentPageIndex = _currentPageIndex.clamp(0, _currentUpdates.length - 1);
@@ -60,7 +65,7 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (hasNewItem && _pageController.hasClients) {
+      if (shouldResetToFirst && _pageController.hasClients) {
         _pageController.jumpToPage(0);
       }
     });
@@ -196,11 +201,13 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Background Moment Image
+            // Background Moment Image (Memory-safe downsampled decode)
             update.isLocalImage
                 ? Image.file(
                     File(update.imageUrl),
                     fit: BoxFit.cover,
+                    cacheWidth: 720,
+                    cacheHeight: 960,
                     errorBuilder: (context, error, stackTrace) => Container(
                       color: AppColors.secondarySurface,
                       child: const Center(
@@ -214,6 +221,8 @@ class _DailyMomentsStackDeckState extends State<DailyMomentsStackDeck> {
                 : CachedNetworkImage(
                     imageUrl: update.imageUrl,
                     fit: BoxFit.cover,
+                    memCacheWidth: 720,
+                    memCacheHeight: 960,
                     placeholder: (context, url) => Container(
                       color: AppColors.secondarySurface,
                       child: const Center(

@@ -31,31 +31,34 @@ class WidgetSyncService {
 
       for (int i = 0; i < moments.length; i++) {
         final moment = moments[i];
-        final localImagePath = '${docsDir.path}/widget_moment_${moment.id}.jpg';
-        final file = File(localImagePath);
+        String resolvedImagePath = '';
 
         try {
-          // If image is already a local file or cached locally, reuse it without redownloading to eliminate latency & flickering
-          if (moment.isLocalImage) {
-            final srcFile = File(moment.imageUrl);
-            if (srcFile.existsSync()) {
-              if (!file.existsSync() || file.lengthSync() == 0) {
-                await srcFile.copy(localImagePath);
+          // If image is already a valid local file (e.g. from DailyMomentsCacheService),
+          // reuse it directly without copying or redownloading to eliminate disk I/O churn!
+          if (moment.isLocalImage && File(moment.imageUrl).existsSync()) {
+            resolvedImagePath = moment.imageUrl;
+          } else {
+            final localImagePath = '${docsDir.path}/widget_moment_${moment.id}.jpg';
+            final file = File(localImagePath);
+
+            if (!file.existsSync() || file.lengthSync() == 0) {
+              final response = await http.get(Uri.parse(moment.imageUrl));
+              if (response.statusCode == 200) {
+                await file.writeAsBytes(response.bodyBytes);
               }
             }
-          } else if (!file.existsSync() || file.lengthSync() == 0) {
-            final response = await http.get(Uri.parse(moment.imageUrl));
-            if (response.statusCode == 200) {
-              await file.writeAsBytes(response.bodyBytes);
+            if (file.existsSync() && file.lengthSync() > 0) {
+              resolvedImagePath = localImagePath;
             }
           }
 
-          if (file.existsSync() && file.lengthSync() > 0) {
+          if (resolvedImagePath.isNotEmpty) {
             final phTimeString = DateFormat('h:mm a').format(moment.createdAt.toLocal());
 
             cachedList.add({
               'id': moment.id,
-              'image_path': localImagePath,
+              'image_path': resolvedImagePath,
               'caption': moment.caption ?? '',
               'location': moment.locationName ?? 'MOMENT',
               'time': phTimeString,
@@ -71,11 +74,24 @@ class WidgetSyncService {
 
       final jsonString = jsonEncode(cachedList);
 
-      // Default to 0 (index 0 is the newest/most recent moment)
+      // Smart Diff Check: If cached moments JSON and top update ID are unchanged, skip redundant OS IPC
+      final currentJson = await HomeWidget.getWidgetData<String>('widget_moments_json');
+      final currentUpdateId = await HomeWidget.getWidgetData<String>('widget_update_id');
       final existingIndex = await HomeWidget.getWidgetData<int>('widget_current_index');
+
       int targetIndex = 0;
       if (existingIndex != null && existingIndex >= 0 && existingIndex < cachedList.length) {
         targetIndex = existingIndex;
+      }
+
+      final activeMoment = cachedList[targetIndex];
+      final isIdentical = currentJson == jsonString &&
+          currentUpdateId == activeMoment['id'] &&
+          existingIndex == targetIndex;
+
+      if (isIdentical) {
+        debugPrint('[WidgetSyncService] Widget moments unchanged. Skipped redundant OS broadcast.');
+        return;
       }
 
       // Save moments list and index
@@ -84,7 +100,6 @@ class WidgetSyncService {
       await HomeWidget.saveWidgetData<bool>('widget_has_update', true);
 
       // Also set the currently displayed moment data for fallback
-      final activeMoment = cachedList[targetIndex];
       await HomeWidget.saveWidgetData<String>('widget_update_id', activeMoment['id'] as String);
       await HomeWidget.saveWidgetData<bool>('widget_is_reacted', activeMoment['is_reacted'] as bool);
       await HomeWidget.saveWidgetData<String>('widget_image_path', activeMoment['image_path'] as String);
@@ -139,13 +154,15 @@ class WidgetSyncService {
       if (existingIndex >= 0) {
         list[existingIndex] = newEntry;
       } else {
-        list.add(newEntry);
+        // Prepend so index 0 is always the newest/latest moment!
+        list.insert(0, newEntry);
       }
 
       final jsonString = jsonEncode(list);
 
       await HomeWidget.saveWidgetData<String>('widget_moments_json', jsonString);
-      await HomeWidget.saveWidgetData<int>('widget_current_index', list.length - 1);
+      // Index 0 is always the newest moment (1 of X)
+      await HomeWidget.saveWidgetData<int>('widget_current_index', 0);
       await HomeWidget.saveWidgetData<bool>('widget_has_update', true);
 
       // Set fallback latest

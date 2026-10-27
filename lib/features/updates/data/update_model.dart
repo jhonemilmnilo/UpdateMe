@@ -115,7 +115,7 @@ class UpdateModel {
       'longitude': longitude,
       'is_read': isRead,
       'is_reacted': isReacted,
-      'created_at': createdAt.toIso8601String(),
+      'created_at': createdAt.toUtc().toIso8601String(),
     };
   }
 }

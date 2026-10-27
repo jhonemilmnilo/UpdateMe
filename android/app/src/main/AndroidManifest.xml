@@ -6,7 +6,9 @@
     <application
         android:label="UpdateMe"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:largeHeap="true"
+        android:hardwareAccelerated="true">
         
         <!-- Default Notification Channel for High-Priority FCM Push Notifications -->
         <meta-data

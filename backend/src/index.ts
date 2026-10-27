@@ -457,6 +457,7 @@ app.post('/api/updates', async (c) => {
             imageUrl: imageUrl,
             caption: caption || '',
             locationName: locationName || '',
+            createdAt: newUpdate.created_at,
           },
         })
 

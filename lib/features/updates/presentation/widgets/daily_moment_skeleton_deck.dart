@@ -55,14 +55,15 @@ class _DailyMomentSkeletonDeckState extends State<DailyMomentSkeletonDeck>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _shimmerController,
-      builder: (context, child) {
-        final anim = _shimmerController.value;
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: _shimmerController,
+        builder: (context, child) {
+          final anim = _shimmerController.value;
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             // Counter Header Skeleton Placeholder
             Padding(
               padding: const EdgeInsets.only(bottom: 12.0),
@@ -239,6 +240,7 @@ class _DailyMomentSkeletonDeckState extends State<DailyMomentSkeletonDeck>
           ],
         );
       },
-    );
-  }
+    ),
+  );
+}
 }

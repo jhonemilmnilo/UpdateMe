@@ -80,9 +80,9 @@ class _SendUpdateModalState extends State<SendUpdateModal> {
   Future<void> _retakePhoto() async {
     final XFile? photo = await _imagePicker.pickImage(
       source: ImageSource.camera,
-      maxWidth: 1200,
-      maxHeight: 1200,
-      imageQuality: 80,
+      maxWidth: 1080,
+      maxHeight: 1080,
+      imageQuality: 75,
     );
     if (photo != null && mounted) {
       setState(() {
@@ -198,6 +198,8 @@ class _SendUpdateModalState extends State<SendUpdateModal> {
                         child: Image.file(
                           _currentImage,
                           fit: BoxFit.cover,
+                          cacheWidth: 250,
+                          cacheHeight: 250,
                         ),
                       ),
                     ),

@@ -141,6 +141,12 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
       )).toList();
       pendingIds = pendingOutbox.map((e) => e.id).toSet();
 
+      final now = DateTime.now();
+      // Ensure pending outbox items are also strictly from today's calendar day
+      final todayPending = localPendingMoments
+          .where((m) => cacheService.isSameCalendarDay(m.createdAt, now))
+          .toList();
+
       // Immediately render local cached and outbox moments
       if (mounted) {
         setState(() {
@@ -151,7 +157,7 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
           }
           final immediateSent = [
             ...cachedSent.where((m) => !pendingIds.contains(m.id)),
-            ...localPendingMoments,
+            ...todayPending,
           ];
           // Newest first! Newest/pending moment is always index 0 (bungad sa user)
           immediateSent.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -178,8 +184,19 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
         type: 'sent',
       );
 
+      final now = DateTime.now();
+
+      // Strictly filter to current local calendar day (PH Time)
+      final todayReceived = received
+          .where((m) => cacheService.isSameCalendarDay(m.createdAt, now))
+          .toList();
+
+      final todayRemoteSent = remoteSent
+          .where((m) => cacheService.isSameCalendarDay(m.createdAt, now))
+          .toList();
+
       // Sort received moments descending (newest/most recent first)
-      final sortedReceived = List<UpdateModel>.from(received)
+      final sortedReceived = List<UpdateModel>.from(todayReceived)
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
       // Cache received and sent moments and their images to local storage asynchronously
@@ -189,8 +206,8 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
       );
 
       final mergedSent = [
-        ...remoteSent.where((m) => !pendingIds.contains(m.id)),
-        ...localPendingMoments,
+        ...todayRemoteSent.where((m) => !pendingIds.contains(m.id)),
+        ...localPendingMoments.where((m) => cacheService.isSameCalendarDay(m.createdAt, now)),
       ];
       // Newest first! Newest/pending moment is always index 0 (bungad sa user)
       mergedSent.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -198,7 +215,7 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
       // Cache remote sent moments to disk as well
       await cacheService.cacheTodayMoments(
         type: 'sent',
-        moments: remoteSent,
+        moments: todayRemoteSent,
       );
 
       if (mounted) {
@@ -242,9 +259,9 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
 
       final XFile? photo = await _imagePicker.pickImage(
         source: ImageSource.camera,
-        maxWidth: 1200,
-        maxHeight: 1200,
-        imageQuality: 80,
+        maxWidth: 1080,
+        maxHeight: 1080,
+        imageQuality: 75,
       );
 
       if (photo != null && mounted) {
@@ -341,7 +358,7 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
                           key: ValueKey('skeleton_deck'),
                         )
                       : DailyMomentsStackDeck(
-                          key: ValueKey('deck_$_selectedTabIndex'),
+                          key: ValueKey('deck_${_selectedTabIndex}_${currentList.isNotEmpty ? currentList.first.id : "empty"}'),
                           updates: currentList,
                           emptyMessage: emptyMessage,
                           currentUserId: widget.user.id,

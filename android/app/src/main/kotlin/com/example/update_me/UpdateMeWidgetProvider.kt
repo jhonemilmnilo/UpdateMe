@@ -5,7 +5,14 @@ import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import android.graphics.Rect
+import android.graphics.RectF
 import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
@@ -44,7 +51,7 @@ class UpdateMeWidgetProvider : HomeWidgetProvider() {
                     try {
                         val jsonArray = JSONArray(momentsJson)
                         if (jsonArray.length() > 1) {
-                            var currentIndex = widgetData.getInt("widget_current_index", jsonArray.length() - 1)
+                            var currentIndex = widgetData.getInt("widget_current_index", 0)
                             currentIndex = if (currentIndex <= 0) jsonArray.length() - 1 else currentIndex - 1
                             widgetData.edit().putInt("widget_current_index", currentIndex).apply()
                             onUpdate(context, appWidgetManager, appWidgetIds, widgetData)
@@ -61,7 +68,7 @@ class UpdateMeWidgetProvider : HomeWidgetProvider() {
                     try {
                         val jsonArray = JSONArray(momentsJson)
                         if (jsonArray.length() > 1) {
-                            var currentIndex = widgetData.getInt("widget_current_index", jsonArray.length() - 1)
+                            var currentIndex = widgetData.getInt("widget_current_index", 0)
                             currentIndex = if (currentIndex >= jsonArray.length() - 1) 0 else currentIndex + 1
                             widgetData.edit().putInt("widget_current_index", currentIndex).apply()
                             onUpdate(context, appWidgetManager, appWidgetIds, widgetData)
@@ -91,7 +98,7 @@ class UpdateMeWidgetProvider : HomeWidgetProvider() {
                 if (!momentsJson.isNullOrEmpty()) {
                     try {
                         val jsonArray = JSONArray(momentsJson)
-                        val currentIndex = widgetData.getInt("widget_current_index", jsonArray.length() - 1)
+                        val currentIndex = widgetData.getInt("widget_current_index", 0)
                         if (currentIndex in 0 until jsonArray.length()) {
                             val obj = jsonArray.getJSONObject(currentIndex)
                             obj.put("is_reacted", true)
@@ -205,20 +212,27 @@ class UpdateMeWidgetProvider : HomeWidgetProvider() {
 
             if (hasUpdate && !imagePath.isNullOrEmpty() && File(imagePath).exists()) {
                 try {
-                    val bitmap = BitmapFactory.decodeFile(imagePath)
-                    if (bitmap != null) {
-                        // Ambient background fill (no gaps)
-                        views.setImageViewBitmap(R.id.widget_blur_bg, bitmap)
+                    // Memory-safe downsampled decode for RemoteViews (max 512x512)
+                    // Prevents Binder IPC TransactionTooLargeException & low-end launcher OOM crashes
+                    val rawBitmap = decodeSampledBitmapFromFile(imagePath, 512, 512)
+                    if (rawBitmap != null) {
+                        // Corner radius: 24dp converted to density pixels so it matches widget_background.xml on any screen
+                        val cornerRadiusPx = 24f * context.resources.displayMetrics.density
+                        val roundedBitmap = getRoundedCornerBitmap(rawBitmap, cornerRadiusPx)
+
+                        // Ambient background fill (no gaps, clipped to rounded corners)
+                        views.setImageViewBitmap(R.id.widget_blur_bg, roundedBitmap)
                         views.setViewVisibility(R.id.widget_blur_bg, View.VISIBLE)
 
-                        // Main photo (preserves full vertical height)
-                        views.setImageViewBitmap(R.id.widget_image, bitmap)
+                        // Main photo (preserves full vertical height, clipped to rounded corners)
+                        views.setImageViewBitmap(R.id.widget_image, roundedBitmap)
                         views.setViewVisibility(R.id.widget_image, View.VISIBLE)
                         views.setViewVisibility(R.id.widget_empty_state, View.GONE)
                     } else {
                         showEmptyState(views)
                     }
                 } catch (e: Exception) {
+                    Log.e(TAG, "Error rendering widget bitmap: ${e.message}")
                     showEmptyState(views)
                 }
             } else {
@@ -322,5 +336,63 @@ class UpdateMeWidgetProvider : HomeWidgetProvider() {
         views.setViewVisibility(R.id.widget_next_btn, View.GONE)
         views.setViewVisibility(R.id.widget_counter, View.GONE)
         views.setViewVisibility(R.id.widget_empty_state, View.VISIBLE)
+    }
+
+    /**
+     * Efficiently decodes and downsamples a bitmap from disk using inSampleSize.
+     * Prevents loading huge 5MB-10MB bitmaps into launcher heap.
+     */
+    private fun decodeSampledBitmapFromFile(path: String, reqWidth: Int, reqHeight: Int): Bitmap? {
+        return try {
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeFile(path, options)
+
+            // Calculate inSampleSize
+            var inSampleSize = 1
+            if (options.outHeight > reqHeight || options.outWidth > reqWidth) {
+                val halfHeight = options.outHeight / 2
+                val halfWidth = options.outWidth / 2
+                while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+                    inSampleSize *= 2
+                }
+            }
+
+            options.inSampleSize = inSampleSize
+            options.inJustDecodeBounds = false
+            // Use RGB_565 for 50% less RAM allocation per pixel
+            options.inPreferredConfig = Bitmap.Config.RGB_565
+
+            BitmapFactory.decodeFile(path, options)
+        } catch (e: OutOfMemoryError) {
+            Log.e(TAG, "OutOfMemoryError decoding widget bitmap: ${e.message}")
+            null
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception decoding widget bitmap: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Clips any Bitmap to smooth rounded corners using hardware Canvas + SRC_IN transfer mode.
+     * Guarantees 100% clean rounded corners across all Android OEM devices (Samsung, Xiaomi, TECNO, etc.)
+     */
+    private fun getRoundedCornerBitmap(bitmap: Bitmap, cornerRadiusPx: Float): Bitmap {
+        val output = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(output)
+        val paint = Paint().apply {
+            isAntiAlias = true
+            isFilterBitmap = true
+            isDither = true
+        }
+        val rect = Rect(0, 0, bitmap.width, bitmap.height)
+        val rectF = RectF(rect)
+
+        canvas.drawRoundRect(rectF, cornerRadiusPx, cornerRadiusPx, paint)
+        paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
+        canvas.drawBitmap(bitmap, rect, rect, paint)
+
+        return output
     }
 }

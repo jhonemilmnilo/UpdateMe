@@ -137,6 +137,7 @@ class _FullscreenMomentsViewerScreenState
                   fit: BoxFit.contain,
                   width: double.infinity,
                   height: double.infinity,
+                  cacheWidth: 1080,
                   errorBuilder: (context, error, stackTrace) => Container(
                     color: Colors.black,
                     child: const Center(
@@ -153,6 +154,7 @@ class _FullscreenMomentsViewerScreenState
                   fit: BoxFit.contain,
                   width: double.infinity,
                   height: double.infinity,
+                  memCacheWidth: 1080,
                   placeholder: (context, url) => Container(
                     color: Colors.black,
                     child: const Center(

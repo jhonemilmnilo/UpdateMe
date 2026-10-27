@@ -86,6 +86,13 @@ class PushNotificationService {
         final data = message.data;
         final momentId = data['updateId'] ?? data['id'];
         if (data.containsKey('imageUrl') && momentId != null) {
+          DateTime momentCreatedAt = DateTime.now();
+          if (data['createdAt'] != null) {
+            try {
+              momentCreatedAt = DateTime.parse(data['createdAt']).toLocal();
+            } catch (_) {}
+          }
+
           final moment = UpdateModel(
             id: momentId,
             senderId: data['senderId'] ?? '',
@@ -95,7 +102,7 @@ class PushNotificationService {
             locationName: data['locationName'],
             isRead: false,
             isReacted: false,
-            createdAt: DateTime.now(),
+            createdAt: momentCreatedAt,
           );
           WidgetSyncService().syncLatestMomentToWidget(moment: moment);
         }
