@@ -84,6 +84,33 @@ class AuthService {
   UserModel? get currentUser => currentUserNotifier.value;
   bool get isAuthenticated => currentUserNotifier.value != null;
 
+  /// Fetches fresh user profile from backend (including partner details)
+  /// and updates the active session seamlessly
+  Future<UserModel?> refreshCurrentUser() async {
+    final current = currentUser;
+    if (current == null) return null;
+
+    try {
+      final response = await http.get(
+        Uri.parse('$_backendBaseUrl/api/user/${current.id}'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['user'] != null) {
+          final freshUser = UserModel.fromJson(data['user'] as Map<String, dynamic>);
+          await activateUserSession(freshUser);
+          debugPrint('[AuthService] Refreshed session. isPaired: ${freshUser.isPaired}');
+          return freshUser;
+        }
+      }
+    } catch (e) {
+      debugPrint('[AuthService] Error refreshing current user: $e');
+    }
+    return current;
+  }
+
   /// Initialize local session from cache
   Future<void> initialize() async {
     try {

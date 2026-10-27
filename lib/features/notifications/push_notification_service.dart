@@ -17,7 +17,13 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   final data = message.data;
   final momentId = data['updateId'] ?? data['id'];
   if (data.containsKey('imageUrl') && momentId != null) {
-    try {
+      DateTime momentCreatedAt = DateTime.now();
+      if (data['createdAt'] != null) {
+        try {
+          momentCreatedAt = DateTime.parse(data['createdAt']).toLocal();
+        } catch (_) {}
+      }
+
       final moment = UpdateModel(
         id: momentId,
         senderId: data['senderId'] ?? '',
@@ -27,11 +33,11 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         locationName: data['locationName'],
         isRead: false,
         isReacted: false,
-        createdAt: DateTime.now(),
+        createdAt: momentCreatedAt,
       );
 
       await WidgetSyncService().syncLatestMomentToWidget(moment: moment);
-      debugPrint('[FCM Background] Widget auto-synced from background push! 🌲');
+      debugPrint('[FCM Background] Widget auto-synced with original capture time ($momentCreatedAt)! 🌲');
     } catch (e) {
       debugPrint('[FCM Background] Error syncing widget from push: $e');
     }

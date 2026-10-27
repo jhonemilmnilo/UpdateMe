@@ -141,6 +141,7 @@ class _UnpairedPairingViewState extends State<UnpairedPairingView> {
       if (mounted) {
         Navigator.of(context).pop(); // close manual input dialog
         AppToast.success(context, 'Connected with partner successfully.');
+        await AuthService().refreshCurrentUser();
       }
     } catch (e) {
       if (mounted) {
@@ -230,11 +231,18 @@ class _UnpairedPairingViewState extends State<UnpairedPairingView> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 28.0, vertical: 12.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
+    return RefreshIndicator(
+      color: AppColors.primaryAccent,
+      backgroundColor: AppColors.secondarySurface,
+      onRefresh: () async {
+        await AuthService().refreshCurrentUser();
+      },
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 28.0, vertical: 12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
           const SizedBox(height: 12),
 
           // Headlines
@@ -425,7 +433,13 @@ class _UnpairedPairingViewState extends State<UnpairedPairingView> {
             width: double.infinity,
             height: 54,
             child: ElevatedButton(
-              onPressed: () => QrScannerModal.show(context),
+              onPressed: () async {
+                final paired = await QrScannerModal.show(context);
+                if (paired == true) {
+                  // Instant session refresh to morph to Paired Home Screen immediately
+                  await AuthService().refreshCurrentUser();
+                }
+              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primaryAccent,
                 foregroundColor: AppColors.textHighContrast,
@@ -447,6 +461,7 @@ class _UnpairedPairingViewState extends State<UnpairedPairingView> {
           const SizedBox(height: 24),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 }

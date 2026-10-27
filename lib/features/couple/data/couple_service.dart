@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../auth/data/auth_service.dart';
 
 class CoupleService {
@@ -56,6 +57,25 @@ class CoupleService {
     // Update active session locally
     await AuthService().activateUserSession(updatedUser);
     debugPrint('[CoupleService] Successfully paired with: ${partnerData['display_name'] ?? partnerData['email']}');
+
+    // Notify partner's device in real-time via Supabase broadcast channel (zero polling, sub-100ms)
+    try {
+      final partnerId = partnerData['id'] as String?;
+      if (partnerId != null && partnerId.isNotEmpty) {
+        final partnerChannel = Supabase.instance.client.channel('user-channel-$partnerId');
+        partnerChannel.subscribe();
+        await partnerChannel.sendBroadcastMessage(
+          event: 'paired',
+          payload: {
+            'partnerId': currentUser.id,
+            'pairedAt': DateTime.now().toIso8601String(),
+          },
+        );
+        debugPrint('[CoupleService] Dispatched live "paired" broadcast to partner channel: user-channel-$partnerId! ⚡');
+      }
+    } catch (e) {
+      debugPrint('[CoupleService] Note: Broadcast channel send error: $e');
+    }
 
     return updatedUser;
   }
