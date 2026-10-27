@@ -4,6 +4,18 @@ import 'daily_moments_cache_service.dart';
 import 'outbox_service.dart';
 import 'update_service.dart';
 
+class SyncResult {
+  final int syncedCount;
+  final int failedCount;
+  final bool isOffline;
+
+  const SyncResult({
+    this.syncedCount = 0,
+    this.failedCount = 0,
+    this.isOffline = false,
+  });
+}
+
 class SyncEngine {
   static final SyncEngine _instance = SyncEngine._internal();
   factory SyncEngine() => _instance;
@@ -25,14 +37,18 @@ class SyncEngine {
     pendingItemsNotifier.value = items;
   }
 
-  /// Drains the outbox FIFO queue
-  Future<void> processQueue({VoidCallback? onSyncComplete}) async {
+  /// Drains the outbox FIFO queue sequentially upon user refresh
+  Future<SyncResult> processQueue({VoidCallback? onSyncComplete}) async {
     if (_isSyncing) {
       debugPrint('[SyncEngine] Already syncing. Skipping duplicate trigger. 🚦');
-      return;
+      return const SyncResult();
     }
 
     _isSyncing = true;
+    int syncedCount = 0;
+    int failedCount = 0;
+    bool isOffline = false;
+
     try {
       final items = await _outbox.getPendingItems();
       pendingItemsNotifier.value = items;
@@ -40,10 +56,10 @@ class SyncEngine {
       if (items.isEmpty) {
         debugPrint('[SyncEngine] Outbox is empty. Nothing to sync. ✨');
         _isSyncing = false;
-        return;
+        return const SyncResult();
       }
 
-      debugPrint('[SyncEngine] Found ${items.length} pending offline items. Starting sync... 🚀');
+      debugPrint('[SyncEngine] Found ${items.length} pending offline items. Syncing on-demand... 🚀');
 
       for (final item in items) {
         // Guard against legacy non-UUID items from previous iterations
@@ -104,21 +120,30 @@ class SyncEngine {
           // 6. On success: purge from outbox (removes outbox JSON metadata)
           await _outbox.removeItem(item);
           debugPrint('[SyncEngine] Successfully synced item ${item.id} with isSynced=true and cached to daily_cache! 🎉');
+          syncedCount++;
           await refreshPendingItems();
 
           onSyncComplete?.call();
         } catch (e) {
-          debugPrint('[SyncEngine] Failed to sync item ${item.id}: $e');
-          // Increment retry count & mark failed
+          debugPrint('[SyncEngine] Network failure syncing item ${item.id}: $e');
+          failedCount++;
+          isOffline = true;
+          // Mark failed without hammering or continuous retrying
           await _outbox.updateItem(item.copyWith(
             status: 'failed',
             retryCount: item.retryCount + 1,
           ));
           await refreshPendingItems();
-          // Stop queue processing on network failure to avoid hammering
+          // Stop queue processing on network failure to avoid CPU & network throttling
           break;
         }
       }
+
+      return SyncResult(
+        syncedCount: syncedCount,
+        failedCount: failedCount,
+        isOffline: isOffline,
+      );
     } finally {
       _isSyncing = false;
       await refreshPendingItems();

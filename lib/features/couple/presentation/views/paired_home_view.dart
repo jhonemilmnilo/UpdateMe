@@ -51,7 +51,8 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
     DailyMomentsCacheService().purgeOutdatedMoments();
     _loadTodayMoments();
     _subscribeToRealtimeUpdates();
-    SyncEngine().processQueue();
+    // Zero-polling architecture: No auto-draining in background!
+    // Pending items will only sync when user explicitly pulls to refresh
   }
 
   void _onPendingItemsChanged() {
@@ -63,9 +64,8 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      debugPrint('[PairedHomeView] App resumed. Purging stale moments, re-fetching & draining outbox...');
+      debugPrint('[PairedHomeView] App resumed. Purging stale moments & loading local feed (zero polling)...');
       DailyMomentsCacheService().purgeOutdatedMoments();
-      SyncEngine().processQueue();
       _loadTodayMoments(isBackgroundSync: true);
     }
   }
@@ -308,14 +308,29 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
             if (mounted) {
               setState(() => _isUserRefreshing = true);
             }
-            SyncEngine().processQueue();
-            // Run network revalidation along with a smooth minimum shimmer window (700ms)
+
+            // 1. Sequentially drain pending outbox queue
+            final syncResult = await SyncEngine().processQueue();
+
+            // 2. Run network revalidation along with a smooth minimum shimmer window (700ms)
             await Future.wait([
               _loadTodayMoments(),
               Future.delayed(const Duration(milliseconds: 700)),
             ]);
+
             if (mounted) {
               setState(() => _isUserRefreshing = false);
+            }
+
+            if (!mounted) return;
+
+            if (syncResult.syncedCount > 0) {
+              AppToast.success(
+                context,
+                'Synced ${syncResult.syncedCount} offline moment${syncResult.syncedCount > 1 ? 's' : ''} to partner.',
+              );
+            } else if (syncResult.isOffline) {
+              AppToast.info(context, 'You are currently offline. Moments are saved safely.');
             }
           },
           color: AppColors.primaryAccent,

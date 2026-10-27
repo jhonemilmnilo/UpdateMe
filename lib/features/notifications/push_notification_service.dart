@@ -18,12 +18,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   final momentId = data['updateId'] ?? data['id'];
   if (data.containsKey('imageUrl') && momentId != null) {
     try {
-      DateTime momentCreatedAt = DateTime.now();
-      if (data['createdAt'] != null) {
-        try {
-          momentCreatedAt = DateTime.parse(data['createdAt']).toLocal();
-        } catch (_) {}
-      }
+      final momentCreatedAt = UpdateModel.parseUtcToLocal(data['createdAt']);
 
       final moment = UpdateModel(
         id: momentId,
@@ -38,7 +33,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       );
 
       await WidgetSyncService().syncLatestMomentToWidget(moment: moment);
-      debugPrint('[FCM Background] Widget auto-synced with original capture time ($momentCreatedAt)! 🌲');
+      debugPrint('[FCM Background] Widget auto-synced with Philippine Time ($momentCreatedAt)! 🌲');
     } catch (e) {
       debugPrint('[FCM Background] Error syncing widget from push: $e');
     }
@@ -93,12 +88,7 @@ class PushNotificationService {
         final data = message.data;
         final momentId = data['updateId'] ?? data['id'];
         if (data.containsKey('imageUrl') && momentId != null) {
-          DateTime momentCreatedAt = DateTime.now();
-          if (data['createdAt'] != null) {
-            try {
-              momentCreatedAt = DateTime.parse(data['createdAt']).toLocal();
-            } catch (_) {}
-          }
+          final momentCreatedAt = UpdateModel.parseUtcToLocal(data['createdAt']);
 
           final moment = UpdateModel(
             id: momentId,

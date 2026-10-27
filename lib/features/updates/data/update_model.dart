@@ -43,7 +43,7 @@ class UpdateModel {
       longitude: json['longitude'] != null ? double.tryParse(json['longitude'].toString()) : null,
       isRead: json['is_read'] as bool? ?? false,
       isReacted: json['is_reacted'] as bool? ?? false,
-      createdAt: _parseUtcToLocal(json['created_at']),
+      createdAt: parseUtcToLocal(json['created_at']),
       sender: json['sender'] as Map<String, dynamic>?,
     );
   }
@@ -80,8 +80,10 @@ class UpdateModel {
     );
   }
 
-  static DateTime _parseUtcToLocal(dynamic rawDate) {
+  /// Reliably parses UTC database timestamps (with or without 'Z') and converts to device local time (PH Time UTC+8)
+  static DateTime parseUtcToLocal(dynamic rawDate) {
     if (rawDate == null) return DateTime.now();
+    if (rawDate is DateTime) return rawDate.toLocal();
     String raw = rawDate.toString().trim();
     if (raw.isEmpty) return DateTime.now();
 
@@ -100,7 +102,11 @@ class UpdateModel {
       raw = '${raw}Z';
     }
 
-    return DateTime.parse(raw).toLocal();
+    try {
+      return DateTime.parse(raw).toLocal();
+    } catch (_) {
+      return DateTime.now();
+    }
   }
 
   Map<String, dynamic> toJson() {
