@@ -625,6 +625,23 @@ app.patch('/api/updates/:id/react', async (c) => {
             await reactionPushPromise
           }
         }
+
+        // Direct Realtime Broadcast to Author's private channel (<100ms instant reaction)
+        try {
+          const authorChannel = supabase.channel(`user-channel-${updated.sender_id}`)
+          await authorChannel.send({
+            type: 'broadcast',
+            event: 'moment_reacted',
+            payload: {
+              updateId: updated.id,
+              isReacted: isReacted,
+              reactorDisplayName: reactorDisplayName,
+            },
+          })
+          await supabase.removeChannel(authorChannel)
+        } catch (realtimeErr) {
+          console.error('[Realtime Broadcast] Error broadcasting reaction event:', realtimeErr)
+        }
       } catch (pushErr) {
         console.error('[FCM] Error sending reaction push notification:', pushErr)
       }

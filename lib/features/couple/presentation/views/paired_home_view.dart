@@ -82,15 +82,34 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
   void _subscribeToRealtimeUpdates() {
     try {
       _updatesChannel = Supabase.instance.client
-          .channel('updates-realtime-${widget.user.id}')
+          .channel('user-channel-${widget.user.id}')
+          .onBroadcast(
+            event: 'moment_reacted',
+            callback: (payload) {
+              debugPrint('[Realtime] Instant reaction broadcast received: $payload ⚡❤️');
+              final updateId = payload['updateId'] as String?;
+              final isReacted = payload['isReacted'] as bool? ?? true;
+              if (updateId != null) {
+                _applyInstantReaction(updateId: updateId, isReacted: isReacted);
+              }
+            },
+          )
           .onPostgresChanges(
             event: PostgresChangeEvent.all,
             schema: 'public',
             table: 'Updates',
             callback: (payload) {
               debugPrint('[Realtime] Live event received: ${payload.eventType} -> new: ${payload.newRecord}');
-              // Re-fetch today moments immediately without pull-to-refresh
-              _loadTodayMoments(isBackgroundSync: true);
+              // If an update row changed reaction state, update in-memory immediately
+              final newRecord = payload.newRecord;
+              final updateId = newRecord['id'] as String?;
+              final isReacted = newRecord['is_reacted'] as bool? ?? false;
+              if (updateId != null && isReacted) {
+                _applyInstantReaction(updateId: updateId, isReacted: true);
+              } else {
+                // Re-fetch today moments in background
+                _loadTodayMoments(isBackgroundSync: true);
+              }
             },
           )
           .subscribe((status, [error]) {
@@ -107,6 +126,32 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
       debugPrint('[Realtime] Subscribed to Updates table live channel! ⚡');
     } catch (e) {
       debugPrint('[Realtime] Error subscribing to channel: $e');
+    }
+  }
+
+  /// Instantly mutates in-memory sent moments state and updates disk cache (0ms perceived latency!)
+  void _applyInstantReaction({required String updateId, required bool isReacted}) {
+    if (!mounted) return;
+
+    bool foundInSent = false;
+    final updatedSent = _sentMoments.map((m) {
+      if (m.id == updateId) {
+        foundInSent = true;
+        return m.copyWith(isReacted: isReacted);
+      }
+      return m;
+    }).toList();
+
+    if (foundInSent) {
+      setState(() {
+        _sentMoments = updatedSent;
+      });
+      DailyMomentsCacheService().updateMomentReaction(
+        type: 'sent',
+        updateId: updateId,
+        isReacted: isReacted,
+      );
+      debugPrint('[PairedHomeView] Applied instant reaction to sent moment $updateId! ❤️');
     }
   }
 
@@ -318,12 +363,10 @@ class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObse
               Future.delayed(const Duration(milliseconds: 700)),
             ]);
 
-            if (mounted) {
-              setState(() => _isUserRefreshing = false);
-            }
-
             if (!mounted) return;
+            setState(() => _isUserRefreshing = false);
 
+            if (!context.mounted) return;
             if (syncResult.syncedCount > 0) {
               AppToast.success(
                 context,

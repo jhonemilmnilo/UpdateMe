@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../auth/data/auth_service.dart';
+import '../../updates/data/daily_moments_cache_service.dart';
 import '../../updates/data/update_model.dart';
 import '../../updates/data/update_service.dart';
 import '../../updates/presentation/views/fullscreen_moments_viewer_screen.dart';
@@ -59,6 +60,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             callback: (payload) {
               debugPrint('[HomeScreen Realtime] Received live "paired" broadcast: $payload ⚡');
               AuthService().refreshCurrentUser();
+            },
+          )
+          .onBroadcast(
+            event: 'moment_reacted',
+            callback: (payload) {
+              debugPrint('[HomeScreen Realtime] Received live "moment_reacted" broadcast: $payload ⚡❤️');
+              final updateId = payload['updateId'] as String?;
+              final isReacted = payload['isReacted'] as bool? ?? true;
+              if (updateId != null) {
+                DailyMomentsCacheService().updateMomentReaction(
+                  type: 'sent',
+                  updateId: updateId,
+                  isReacted: isReacted,
+                );
+              }
             },
           )
           .onPostgresChanges(

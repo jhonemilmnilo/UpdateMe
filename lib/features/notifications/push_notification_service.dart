@@ -4,6 +4,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../auth/data/auth_service.dart';
+import '../updates/data/daily_moments_cache_service.dart';
 import '../updates/data/update_model.dart';
 import '../updates/data/widget_sync_service.dart';
 
@@ -13,9 +14,24 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   debugPrint('[FCM Background] Message received: ${message.messageId}');
 
-  // If payload contains moment data, automatically sync to Android Home Screen Widget in the background!
   final data = message.data;
+  final type = data['type'];
   final momentId = data['updateId'] ?? data['id'];
+
+  if (type == 'heart_reaction' && momentId != null) {
+    try {
+      await DailyMomentsCacheService().updateMomentReaction(
+        type: 'sent',
+        updateId: momentId,
+        isReacted: true,
+      );
+    } catch (e) {
+      debugPrint('[FCM Background] Error updating reaction in cache: $e');
+    }
+    return;
+  }
+
+  // If payload contains moment data, automatically sync to Android Home Screen Widget in the background!
   if (data.containsKey('imageUrl') && momentId != null) {
     try {
       final momentCreatedAt = UpdateModel.parseUtcToLocal(data['createdAt']);
@@ -86,8 +102,17 @@ class PushNotificationService {
         debugPrint('[FCM Foreground] Received: ${message.notification?.title} - ${message.notification?.body}');
 
         final data = message.data;
+        final type = data['type'];
         final momentId = data['updateId'] ?? data['id'];
-        if (data.containsKey('imageUrl') && momentId != null) {
+
+        if (type == 'heart_reaction' && momentId != null) {
+          debugPrint('[FCM Foreground] Heart reaction received for moment: $momentId ❤️');
+          DailyMomentsCacheService().updateMomentReaction(
+            type: 'sent',
+            updateId: momentId,
+            isReacted: true,
+          );
+        } else if (data.containsKey('imageUrl') && momentId != null) {
           final momentCreatedAt = UpdateModel.parseUtcToLocal(data['createdAt']);
 
           final moment = UpdateModel(

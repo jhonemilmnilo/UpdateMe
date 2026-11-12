@@ -206,4 +206,40 @@ class DailyMomentsCacheService {
       return [];
     }
   }
+
+  /// Updates the reaction state of a specific moment in local cache immediately
+  Future<void> updateMomentReaction({
+    required String type, // 'received' or 'sent'
+    required String updateId,
+    required bool isReacted,
+  }) async {
+    try {
+      final cacheDir = await _getCacheDir();
+      final metaFile = File('${cacheDir.path}/cache_$type.json');
+      if (!await metaFile.exists()) return;
+
+      final content = await metaFile.readAsString();
+      final List list = jsonDecode(content);
+      bool modified = false;
+
+      final updatedList = list.map((item) {
+        if (item is Map<String, dynamic> && item['id'] == updateId) {
+          modified = true;
+          return {
+            ...item,
+            'is_reacted': isReacted,
+          };
+        }
+        return item;
+      }).toList();
+
+      if (modified) {
+        await metaFile.writeAsString(jsonEncode(updatedList));
+        debugPrint(
+            '[DailyMomentsCacheService] Locally updated reaction for moment $updateId in cache_$type.json! ❤️');
+      }
+    } catch (e) {
+      debugPrint('[DailyMomentsCacheService] Error updating reaction in cache: $e');
+    }
+  }
 }
