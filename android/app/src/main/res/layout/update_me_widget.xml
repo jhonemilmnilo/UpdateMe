@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background">
+
+    <!-- Layer 1: Blurred Ambience Background (fills entire widget, avoids empty black borders) -->
+    <ImageView
+        android:id="@+id/widget_blur_bg"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:alpha="0.35"
+        android:contentDescription="Ambient Background" />
+
+    <!-- Layer 2: Main Photo (fitCenter preserves 100% full height and width without cropping portrait faces) -->
+    <ImageView
+        android:id="@+id/widget_image"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center"
+        android:scaleType="fitCenter"
+        android:adjustViewBounds="true"
+        android:contentDescription="Partner Moment Photo" />
+
+    <!-- Fallback / Empty State Placeholder Container -->
+    <LinearLayout
+        android:id="@+id/widget_empty_state"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="20dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="UPDATEME"
+            android:textColor="#E8ECE9"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_empty_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="center"
+            android:text="Waiting for moments..."
+            android:textColor="#8E9A8E"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <!-- Top Metadata Header: Location Badge & Moments Counter (Clean minimal pills) -->
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:padding="10dp">
+
+        <!-- Location Badge (Top Left) -->
+        <TextView
+            android:id="@+id/widget_location_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentStart="true"
+            android:layout_alignParentLeft="true"
+            android:layout_centerVertical="true"
+            android:background="@drawable/widget_badge_bg"
+            android:paddingLeft="9dp"
+            android:paddingTop="4dp"
+            android:paddingRight="9dp"
+            android:paddingBottom="4dp"
+            android:text="TODAY"
+            android:textColor="#E8ECE9"
+            android:textSize="9sp"
+            android:textStyle="bold" />
+
+        <!-- Right Action Header Container: Counter & Refresh Button -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentEnd="true"
+            android:layout_alignParentRight="true"
+            android:layout_centerVertical="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <!-- Index Indicator (Top Right: e.g. "1/2") -->
+            <TextView
+                android:id="@+id/widget_counter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/widget_badge_bg"
+                android:paddingLeft="8dp"
+                android:paddingTop="4dp"
+                android:paddingRight="8dp"
+                android:paddingBottom="4dp"
+                android:text="1/1"
+                android:textColor="#E8ECE9"
+                android:textSize="9sp"
+                android:textStyle="bold" />
+
+            <!-- Today's Moments 4-Box Grid Button -->
+            <ImageButton
+                android:id="@+id/widget_grid_btn"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:layout_marginStart="6dp"
+                android:layout_marginLeft="6dp"
+                android:background="@drawable/widget_react_bg"
+                android:padding="5dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_grid"
+                android:contentDescription="Today's Moments Grid" />
+
+            <!-- Refresh Button in Top Right Header -->
+            <ImageButton
+                android:id="@+id/widget_refresh_btn"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:layout_marginStart="6dp"
+                android:layout_marginLeft="6dp"
+                android:background="@drawable/widget_react_bg"
+                android:padding="5dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_refresh"
+                android:contentDescription="Refresh Moments" />
+        </LinearLayout>
+    </RelativeLayout>
+
+    <!-- Middle Floating Navigation: Left (<) and Right (>) Buttons -->
+    <ImageButton
+        android:id="@+id/widget_prev_btn"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_gravity="start|center_vertical"
+        android:layout_marginStart="8dp"
+        android:layout_marginLeft="8dp"
+        android:background="@drawable/widget_react_bg"
+        android:padding="5dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_chevron_left"
+        android:contentDescription="Previous Moment" />
+
+    <ImageButton
+        android:id="@+id/widget_next_btn"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_gravity="end|center_vertical"
+        android:layout_marginEnd="8dp"
+        android:layout_marginRight="8dp"
+        android:background="@drawable/widget_react_bg"
+        android:padding="5dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_chevron_right"
+        android:contentDescription="Next Moment" />
+
+    <!-- Bottom Scrim & Caption + Time + React Action Overlay -->
+    <RelativeLayout
+        android:id="@+id/widget_bottom_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="104dp"
+        android:layout_gravity="bottom"
+        android:background="@drawable/widget_scrim_bg"
+        android:paddingLeft="10dp"
+        android:paddingRight="10dp"
+        android:paddingBottom="10dp">
+
+        <!-- Heart React Button (Right aligned at bottom) -->
+        <ImageButton
+            android:id="@+id/widget_react_btn"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:layout_alignParentEnd="true"
+            android:layout_alignParentRight="true"
+            android:layout_alignParentBottom="true"
+            android:background="@drawable/widget_react_bg"
+            android:padding="7dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_heart_outline"
+            android:contentDescription="Heart React Button" />
+
+        <!-- Vertical Container for Caption & Time on Left -->
+        <LinearLayout
+            android:id="@+id/widget_text_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_alignParentStart="true"
+            android:layout_alignParentLeft="true"
+            android:layout_alignParentBottom="true"
+            android:layout_toStartOf="@id/widget_react_btn"
+            android:layout_toLeftOf="@id/widget_react_btn"
+            android:layout_marginEnd="8dp"
+            android:layout_marginRight="8dp"
+            android:orientation="vertical">
+
+            <!-- Caption -->
+            <TextView
+                android:id="@+id/widget_caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:textColor="#E8ECE9"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <!-- Partner / User Reply (Minimalist Storm Cloud Green) -->
+            <TextView
+                android:id="@+id/widget_reply_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="#A3B0A4"
+                android:textSize="11sp"
+                android:visibility="gone" />
+
+            <!-- Time below caption/reply -->
+            <TextView
+                android:id="@+id/widget_time_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="--:--"
+                android:textColor="#8E9A8E"
+                android:textSize="10sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </RelativeLayout>
+
+</FrameLayout>

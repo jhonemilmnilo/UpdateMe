@@ -1,0 +1,250 @@
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:home_widget/home_widget.dart';
+import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'update_model.dart';
+
+class WidgetSyncService {
+  static final WidgetSyncService _instance = WidgetSyncService._internal();
+  factory WidgetSyncService() => _instance;
+  WidgetSyncService._internal();
+
+  static const String _androidWidgetName = 'UpdateMeWidgetProvider';
+
+  /// Syncs all received moments for today to the Android Home Screen Widget
+  Future<void> syncMomentsListToWidget({
+    required List<UpdateModel> moments,
+    String? userId,
+  }) async {
+    if (moments.isEmpty) {
+      await clearWidget();
+      return;
+    }
+
+    try {
+      final resolvedUserId = (userId != null && userId.isNotEmpty)
+          ? userId
+          : moments.first.receiverId;
+      if (resolvedUserId.isNotEmpty) {
+        await HomeWidget.saveWidgetData<String>('widget_user_id', resolvedUserId);
+      }
+      debugPrint('[WidgetSyncService] Syncing ${moments.length} moments to home screen widget...');
+
+      final docsDir = await getApplicationDocumentsDirectory();
+      final List<Map<String, dynamic>> cachedList = [];
+
+      for (int i = 0; i < moments.length; i++) {
+        final moment = moments[i];
+        String resolvedImagePath = '';
+
+        try {
+          // If image is already a valid local file (e.g. from DailyMomentsCacheService),
+          // reuse it directly without copying or redownloading to eliminate disk I/O churn!
+          if (moment.isLocalImage && File(moment.imageUrl).existsSync()) {
+            resolvedImagePath = moment.imageUrl;
+          } else {
+            final localImagePath = '${docsDir.path}/widget_moment_${moment.id}.jpg';
+            final file = File(localImagePath);
+
+            if (!file.existsSync() || file.lengthSync() == 0) {
+              final response = await http.get(Uri.parse(moment.imageUrl));
+              if (response.statusCode == 200) {
+                await file.writeAsBytes(response.bodyBytes);
+              }
+            }
+            if (file.existsSync() && file.lengthSync() > 0) {
+              resolvedImagePath = localImagePath;
+            }
+          }
+
+          if (resolvedImagePath.isNotEmpty) {
+            final phTimeString = DateFormat('h:mm a').format(moment.createdAt.toLocal());
+            final replyTimeString = moment.replyCreatedAt != null
+                ? DateFormat('h:mm a').format(moment.replyCreatedAt!.toLocal())
+                : null;
+
+            cachedList.add({
+              'id': moment.id,
+              'image_path': resolvedImagePath,
+              'caption': moment.caption ?? '',
+              'location': moment.locationName ?? 'MOMENT',
+              'time': phTimeString,
+              'is_reacted': moment.isReacted,
+              'created_at': moment.createdAt.toIso8601String(),
+              'reply_text': moment.replyText ?? '',
+              'reply_time': replyTimeString ?? '',
+              'reply_created_at': moment.replyCreatedAt?.toUtc().toIso8601String() ?? '',
+              'is_replied': moment.isReplied,
+              'is_pending_reply': moment.isPendingReply,
+              'is_sender': resolvedUserId.isNotEmpty && moment.senderId == resolvedUserId,
+            });
+          }
+        } catch (e) {
+          debugPrint('[WidgetSyncService] Failed to cache moment $i: $e');
+        }
+      }
+
+      if (cachedList.isEmpty) return;
+
+      final jsonString = jsonEncode(cachedList);
+
+      // Smart Diff Check: If cached moments JSON and top update ID are unchanged, skip redundant OS IPC
+      final currentJson = await HomeWidget.getWidgetData<String>('widget_moments_json');
+      final currentUpdateId = await HomeWidget.getWidgetData<String>('widget_update_id');
+      final existingIndex = await HomeWidget.getWidgetData<int>('widget_current_index');
+
+      int targetIndex = 0;
+      if (existingIndex != null && existingIndex >= 0 && existingIndex < cachedList.length) {
+        targetIndex = existingIndex;
+      }
+
+      final activeMoment = cachedList[targetIndex];
+      final isIdentical = currentJson == jsonString &&
+          currentUpdateId == activeMoment['id'] &&
+          existingIndex == targetIndex;
+
+      if (isIdentical) {
+        debugPrint('[WidgetSyncService] Widget moments unchanged. Skipped redundant OS broadcast.');
+        return;
+      }
+
+      // Save moments list and index
+      await HomeWidget.saveWidgetData<String>('widget_moments_json', jsonString);
+      await HomeWidget.saveWidgetData<int>('widget_current_index', targetIndex);
+      await HomeWidget.saveWidgetData<bool>('widget_has_update', true);
+
+      // Also set the currently displayed moment data for fallback
+      await HomeWidget.saveWidgetData<String>('widget_update_id', activeMoment['id'] as String);
+      await HomeWidget.saveWidgetData<bool>('widget_is_reacted', activeMoment['is_reacted'] as bool);
+      await HomeWidget.saveWidgetData<String>('widget_image_path', activeMoment['image_path'] as String);
+      await HomeWidget.saveWidgetData<String>('widget_caption', activeMoment['caption'] as String);
+      await HomeWidget.saveWidgetData<String>('widget_location', activeMoment['location'] as String);
+      await HomeWidget.saveWidgetData<String>('widget_time', activeMoment['time'] as String);
+
+      await HomeWidget.updateWidget(name: _androidWidgetName);
+
+      debugPrint('[WidgetSyncService] Home screen widget synced with ${cachedList.length} moments at index $targetIndex! 🌲');
+    } catch (e) {
+      debugPrint('[WidgetSyncService] Error syncing moments list: $e');
+    }
+  }
+
+  /// Appends a new incoming moment to existing widget moments carousel without overwriting
+  Future<void> appendMomentToWidget({required UpdateModel moment}) async {
+    try {
+      final docsDir = await getApplicationDocumentsDirectory();
+      final localImagePath = '${docsDir.path}/widget_moment_${moment.id}.jpg';
+
+      final response = await http.get(Uri.parse(moment.imageUrl));
+      if (response.statusCode != 200) {
+        debugPrint('[WidgetSyncService] Failed to download moment image for append: ${response.statusCode}');
+        return;
+      }
+
+      final file = File(localImagePath);
+      await file.writeAsBytes(response.bodyBytes);
+
+      final phTimeString = DateFormat('h:mm a').format(moment.createdAt.toLocal());
+      final replyTimeString = moment.replyCreatedAt != null
+          ? DateFormat('h:mm a').format(moment.replyCreatedAt!.toLocal())
+          : null;
+      final newEntry = {
+        'id': moment.id,
+        'image_path': localImagePath,
+        'caption': moment.caption ?? '',
+        'location': moment.locationName ?? 'MOMENT',
+        'time': phTimeString,
+        'is_reacted': moment.isReacted,
+        'created_at': moment.createdAt.toIso8601String(),
+        'reply_text': moment.replyText ?? '',
+        'reply_time': replyTimeString ?? '',
+        'reply_created_at': moment.replyCreatedAt?.toUtc().toIso8601String() ?? '',
+        'is_replied': moment.isReplied,
+        'is_pending_reply': moment.isPendingReply,
+        'is_sender': false,
+      };
+
+      // Retrieve existing cached carousel
+      final cachedJson = await HomeWidget.getWidgetData<String>('widget_moments_json');
+      List<dynamic> list = [];
+      if (cachedJson != null && cachedJson.isNotEmpty) {
+        try {
+          list = jsonDecode(cachedJson) as List<dynamic>;
+        } catch (_) {}
+      }
+
+      // Check if moment already exists in list
+      final existingIndex = list.indexWhere((m) => m is Map && m['id'] == moment.id);
+      if (existingIndex >= 0) {
+        list[existingIndex] = newEntry;
+      } else {
+        // Prepend so index 0 is always the newest/latest moment!
+        list.insert(0, newEntry);
+      }
+
+      final jsonString = jsonEncode(list);
+
+      await HomeWidget.saveWidgetData<String>('widget_moments_json', jsonString);
+      // Index 0 is always the newest moment (1 of X)
+      await HomeWidget.saveWidgetData<int>('widget_current_index', 0);
+      await HomeWidget.saveWidgetData<bool>('widget_has_update', true);
+
+      // Set fallback latest
+      await HomeWidget.saveWidgetData<String>('widget_update_id', moment.id);
+      await HomeWidget.saveWidgetData<bool>('widget_is_reacted', moment.isReacted);
+      await HomeWidget.saveWidgetData<String>('widget_image_path', localImagePath);
+      await HomeWidget.saveWidgetData<String>('widget_caption', moment.caption ?? '');
+      await HomeWidget.saveWidgetData<String>('widget_location', moment.locationName ?? 'MOMENT');
+      await HomeWidget.saveWidgetData<String>('widget_time', phTimeString);
+
+      await HomeWidget.updateWidget(name: _androidWidgetName);
+
+      debugPrint('[WidgetSyncService] Appended moment ${moment.id} to widget! Total moments: ${list.length} 🌲');
+    } catch (e) {
+      debugPrint('[WidgetSyncService] Error appending moment to widget: $e');
+    }
+  }
+
+  /// Single moment sync (routes to appendMomentToWidget so carousel is preserved)
+  Future<void> syncLatestMomentToWidget({required UpdateModel moment}) async {
+    await appendMomentToWidget(moment: moment);
+  }
+
+  /// Requests Android launcher to pin the UpdateMe widget onto the user's home screen
+  Future<bool> requestPinWidget() async {
+    try {
+      await HomeWidget.requestPinWidget(
+        name: _androidWidgetName,
+      );
+      return true;
+    } catch (e) {
+      debugPrint('[WidgetSyncService] Error requesting pin widget: $e');
+      return false;
+    }
+  }
+
+  /// Clears widget state or displays default empty state
+  Future<void> clearWidget() async {
+    try {
+      await HomeWidget.saveWidgetData<bool>('widget_has_update', false);
+      await HomeWidget.saveWidgetData<String?>('widget_moments_json', null);
+      await HomeWidget.saveWidgetData<String?>('widget_image_path', null);
+      await HomeWidget.saveWidgetData<String?>('widget_caption', null);
+      await HomeWidget.saveWidgetData<String?>('widget_location', null);
+      await HomeWidget.saveWidgetData<String?>('widget_time', null);
+      await HomeWidget.saveWidgetData<int>('widget_current_index', 0);
+      await HomeWidget.saveWidgetData<String?>('widget_update_id', null);
+      await HomeWidget.saveWidgetData<bool>('widget_is_reacted', false);
+
+      await HomeWidget.updateWidget(
+        name: _androidWidgetName,
+      );
+      debugPrint('[WidgetSyncService] Cleared widget state and reset to empty! 🌲');
+    } catch (e) {
+      debugPrint('[WidgetSyncService] Error clearing widget: $e');
+    }
+  }
+}

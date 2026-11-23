@@ -1,0 +1,694 @@
+import 'dart:async';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/app_toast.dart';
+import '../../../auth/data/auth_service.dart';
+import '../../../updates/data/daily_moments_cache_service.dart';
+import '../../../updates/data/outbox_service.dart';
+import '../../../updates/data/reply_outbox_service.dart';
+import '../../../updates/data/sync_engine.dart';
+import '../../../updates/data/update_model.dart';
+import '../../../updates/data/update_service.dart';
+import '../../../updates/data/widget_sync_service.dart';
+import '../../../updates/presentation/modals/send_update_modal.dart';
+import '../../../updates/presentation/views/today_moments_grid_screen.dart';
+import '../../../updates/presentation/widgets/daily_moment_skeleton_deck.dart';
+import '../../../updates/presentation/widgets/daily_moments_stack_deck.dart';
+import '../../../updates/presentation/widgets/moments_tab_bar.dart';
+
+class PairedHomeView extends StatefulWidget {
+  final UserModel user;
+
+  const PairedHomeView({
+    super.key,
+    required this.user,
+  });
+
+  @override
+  State<PairedHomeView> createState() => _PairedHomeViewState();
+}
+
+class _PairedHomeViewState extends State<PairedHomeView> with WidgetsBindingObserver {
+  final ImagePicker _imagePicker = ImagePicker();
+  final UpdateService _updateService = UpdateService();
+  final WidgetSyncService _widgetSyncService = WidgetSyncService();
+
+  int _selectedTabIndex = 0; // 0: From Partner, 1: Sent Moments
+  bool _isLoadingMoments = true;
+  bool _isUserRefreshing = false;
+  List<UpdateModel> _receivedMoments = [];
+  List<UpdateModel> _sentMoments = [];
+  bool _isOpeningCamera = false;
+
+  RealtimeChannel? _updatesChannel;
+  StreamSubscription<MomentReplyEvent>? _replyEventSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    SyncEngine().pendingItemsNotifier.addListener(_onPendingItemsChanged);
+    _replyEventSubscription = _updateService.momentRepliedStream.listen((event) {
+      _applyInstantReply(
+        updateId: event.updateId,
+        replyText: event.replyText,
+        replyCreatedAt: event.replyCreatedAt,
+        reBroadcast: false,
+      );
+    });
+    // Purge any outdated moments from previous days immediately
+    DailyMomentsCacheService().purgeOutdatedMoments();
+    _loadTodayMoments();
+    _subscribeToRealtimeUpdates();
+    // Zero-polling architecture: No auto-draining in background!
+    // Pending items will only sync when user explicitly pulls to refresh
+  }
+
+  void _onPendingItemsChanged() {
+    if (mounted) {
+      _loadTodayMoments(isBackgroundSync: true);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('[PairedHomeView] App resumed. Purging stale moments & loading local feed (zero polling)...');
+      DailyMomentsCacheService().purgeOutdatedMoments();
+      _loadTodayMoments(isBackgroundSync: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _replyEventSubscription?.cancel();
+    SyncEngine().pendingItemsNotifier.removeListener(_onPendingItemsChanged);
+    WidgetsBinding.instance.removeObserver(this);
+    _updatesChannel?.unsubscribe();
+    super.dispose();
+  }
+
+  /// Supabase WebSocket Realtime Channel for instant live updates and reactions
+  void _subscribeToRealtimeUpdates() {
+    try {
+      _updatesChannel = Supabase.instance.client
+          .channel('user-channel-${widget.user.id}')
+          .onBroadcast(
+            event: 'moment_reacted',
+            callback: (payload) {
+              debugPrint('[Realtime] Instant reaction broadcast received: $payload ⚡❤️');
+              final updateId = payload['updateId'] as String?;
+              final isReacted = payload['isReacted'] as bool? ?? true;
+              if (updateId != null) {
+                _applyInstantReaction(updateId: updateId, isReacted: isReacted);
+              }
+            },
+          )
+          .onBroadcast(
+            event: 'moment_replied',
+            callback: (payload) {
+              debugPrint('[Realtime] Instant reply broadcast received: $payload 💬⚡');
+              final updateId = payload['updateId'] as String?;
+              final replyText = payload['replyText'] as String?;
+              final replyCreatedAtStr = payload['replyCreatedAt'] as String?;
+              if (updateId != null && replyText != null) {
+                _applyInstantReply(
+                  updateId: updateId,
+                  replyText: replyText,
+                  replyCreatedAt: replyCreatedAtStr != null ? DateTime.tryParse(replyCreatedAtStr) : null,
+                );
+              }
+            },
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'Updates',
+            callback: (payload) {
+              debugPrint('[Realtime] Live event received: ${payload.eventType} -> new: ${payload.newRecord}');
+              if (payload.eventType == PostgresChangeEvent.delete) {
+                _loadTodayMoments(isBackgroundSync: true);
+                return;
+              }
+              final newRecord = payload.newRecord;
+              final updateId = newRecord['id'] as String?;
+              final isReacted = newRecord['is_reacted'] as bool? ?? false;
+              final replyText = newRecord['reply_text'] as String?;
+              final replyCreatedAtStr = newRecord['reply_created_at'] as String?;
+
+              if (updateId != null && replyText != null && replyText.trim().isNotEmpty) {
+                _applyInstantReply(
+                  updateId: updateId,
+                  replyText: replyText.trim(),
+                  replyCreatedAt: replyCreatedAtStr != null
+                      ? UpdateModel.parseUtcToLocal(replyCreatedAtStr)
+                      : null,
+                );
+              }
+
+              if (updateId != null && isReacted && (replyText == null || replyText.trim().isEmpty)) {
+                _applyInstantReaction(updateId: updateId, isReacted: true);
+              } else if (payload.eventType == PostgresChangeEvent.insert ||
+                  updateId == null) {
+                // Re-fetch today moments in background for new inserts
+                _loadTodayMoments(isBackgroundSync: true);
+              }
+            },
+          )
+          .subscribe((status, [error]) {
+            debugPrint('[Realtime] Channel status: $status, error: $error');
+            if (status == RealtimeSubscribeStatus.channelError && mounted) {
+              debugPrint('[Realtime] Channel encountered error. Scheduling auto-reconnect in 4s...');
+              Future.delayed(const Duration(seconds: 4), () {
+                if (mounted) {
+                  _subscribeToRealtimeUpdates();
+                }
+              });
+            }
+          });
+      debugPrint('[Realtime] Subscribed to Updates table live channel! ⚡');
+    } catch (e) {
+      debugPrint('[Realtime] Error subscribing to channel: $e');
+    }
+  }
+
+  /// Instantly mutates in-memory sent moments state and updates disk cache (0ms perceived latency!)
+  void _applyInstantReaction({required String updateId, required bool isReacted}) {
+    if (!mounted) return;
+
+    bool foundInSent = false;
+    final updatedSent = _sentMoments.map((m) {
+      if (m.id == updateId) {
+        foundInSent = true;
+        return m.copyWith(isReacted: isReacted);
+      }
+      return m;
+    }).toList();
+
+    if (foundInSent) {
+      setState(() {
+        _sentMoments = updatedSent;
+      });
+      DailyMomentsCacheService().updateMomentReaction(
+        type: 'sent',
+        updateId: updateId,
+        isReacted: isReacted,
+      );
+      debugPrint('[PairedHomeView] Applied instant reaction to sent moment $updateId! ❤️');
+    }
+  }
+
+  /// Instantly mutates in-memory sent moments when partner sends a reply (<100ms perceived latency!)
+  void _applyInstantReply({
+    required String updateId,
+    required String replyText,
+    DateTime? replyCreatedAt,
+    bool reBroadcast = true,
+  }) {
+    if (!mounted) return;
+
+    final effectiveReplyDate = replyCreatedAt ?? DateTime.now();
+
+    if (reBroadcast) {
+      _updateService.emitMomentReplied(
+        updateId: updateId,
+        replyText: replyText,
+        replyCreatedAt: effectiveReplyDate,
+      );
+    }
+
+    bool foundInSent = false;
+    bool alreadyApplied = false;
+    final updatedSent = _sentMoments.map((m) {
+      if (m.id == updateId) {
+        foundInSent = true;
+        if (m.replyText == replyText && m.isReplied && !m.isPendingReply) {
+          alreadyApplied = true;
+          return m;
+        }
+        return m.copyWith(
+          replyText: replyText,
+          replyCreatedAt: effectiveReplyDate,
+          isReplied: true,
+          isPendingReply: false,
+        );
+      }
+      return m;
+    }).toList();
+
+    if (foundInSent && !alreadyApplied) {
+      HapticFeedback.mediumImpact();
+      setState(() {
+        _sentMoments = updatedSent;
+      });
+      // Persist to local disk cache for instant offline reload
+      DailyMomentsCacheService().updateMomentReply(
+        type: 'sent',
+        updateId: updateId,
+        replyText: replyText,
+        replyCreatedAt: effectiveReplyDate,
+        isPendingReply: false,
+      );
+      debugPrint('[PairedHomeView] Applied instant reply to sent moment $updateId and cached to disk! 💬🌲');
+    }
+  }
+
+  Future<void> _loadTodayMoments({bool isBackgroundSync = false}) async {
+    if (!isBackgroundSync && mounted) {
+      setState(() => _isLoadingMoments = true);
+    }
+
+    final cacheService = DailyMomentsCacheService();
+
+    // 1. FIRST: Load local cached moments and pending outbox items immediately (100% offline-safe)
+    List<UpdateModel> localPendingMoments = [];
+    Set<String> pendingIds = {};
+    Map<String, ReplyOutboxItem> pendingRepliesMap = {};
+    try {
+      final cachedReceived = await cacheService.getTodayCachedMoments(type: 'received');
+      final cachedSent = await cacheService.getTodayCachedMoments(type: 'sent');
+
+      final pendingReplies = await ReplyOutboxService().getPendingReplies();
+      pendingRepliesMap = {for (final r in pendingReplies) r.updateId: r};
+
+      final pendingOutbox = await OutboxService().getPendingItems();
+      localPendingMoments = pendingOutbox.map((item) => UpdateModel(
+        id: item.id,
+        senderId: item.senderId,
+        receiverId: item.receiverId ?? '',
+        imageUrl: item.localImagePath,
+        caption: item.caption,
+        locationName: item.locationName,
+        latitude: item.latitude,
+        longitude: item.longitude,
+        isRead: false,
+        isReacted: false,
+        createdAt: item.createdAt,
+        isPending: true,
+      )).toList();
+      pendingIds = pendingOutbox.map((e) => e.id).toSet();
+
+      final now = DateTime.now();
+      // Ensure pending outbox items are also strictly from today's calendar day
+      final todayPending = localPendingMoments
+          .where((m) => cacheService.isSameCalendarDay(m.createdAt, now))
+          .toList();
+
+      // Immediately render local cached and outbox moments
+      if (mounted) {
+        setState(() {
+          final sortedCached = List<UpdateModel>.from(cachedReceived)
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          _receivedMoments = sortedCached;
+          final immediateSent = [
+            ...cachedSent.where((m) => !pendingIds.contains(m.id)),
+            ...todayPending,
+          ];
+          // Newest first! Newest/pending moment is always index 0 (bungad sa user)
+          immediateSent.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          _sentMoments = immediateSent;
+          // Only dismiss loader early if it's an ambient background sync
+          if (isBackgroundSync) {
+            _isLoadingMoments = false;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('[PairedHomeView] Error loading local cached moments: $e');
+    }
+
+    // 2. SECOND: Attempt remote network fetch (degrades gracefully if offline or no signal)
+    try {
+      final received = await _updateService.getTodayUpdates(
+        userId: widget.user.id,
+        type: 'received',
+      );
+
+      final remoteSent = await _updateService.getTodayUpdates(
+        userId: widget.user.id,
+        type: 'sent',
+      );
+
+      final now = DateTime.now();
+
+      // Strictly filter to current local calendar day (PH Time)
+      final todayReceived = received
+          .where((m) => cacheService.isSameCalendarDay(m.createdAt, now))
+          .toList();
+
+      final todayRemoteSent = remoteSent
+          .where((m) => cacheService.isSameCalendarDay(m.createdAt, now))
+          .toList();
+
+      // Sort received moments descending (newest/most recent first)
+      final sortedReceived = List<UpdateModel>.from(todayReceived)
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      // Filter received moments with any local pending replies applied
+      final protectedReceived = sortedReceived.map((m) {
+        final pendingReply = pendingRepliesMap[m.id];
+        if (pendingReply != null && (m.replyText == null || m.replyText!.trim().isEmpty)) {
+          return m.copyWith(
+            replyText: pendingReply.replyText,
+            replyCreatedAt: pendingReply.replyCreatedAt,
+            isReplied: true,
+            isPendingReply: true,
+          );
+        }
+        return m;
+      }).toList();
+
+      // Cache received and sent moments and their images to local storage asynchronously
+      final localizedReceived = await cacheService.cacheTodayMoments(
+        type: 'received',
+        moments: protectedReceived,
+      );
+
+      final mergedSent = [
+        ...todayRemoteSent.where((m) => !pendingIds.contains(m.id)),
+        ...localPendingMoments.where((m) => cacheService.isSameCalendarDay(m.createdAt, now)),
+      ];
+      // Newest first! Newest/pending moment is always index 0 (bungad sa user)
+      mergedSent.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      // Cache remote sent moments to disk as well
+      await cacheService.cacheTodayMoments(
+        type: 'sent',
+        moments: todayRemoteSent,
+      );
+
+      if (mounted) {
+        setState(() {
+          _receivedMoments = localizedReceived;
+          _sentMoments = mergedSent;
+          _isLoadingMoments = false;
+        });
+
+        // Automatically update the Android Home Screen Widget with today's received moments
+        if (_receivedMoments.isNotEmpty) {
+          _widgetSyncService.syncMomentsListToWidget(
+            moments: _receivedMoments,
+            userId: widget.user.id,
+          );
+        } else {
+          _widgetSyncService.clearWidget();
+        }
+      }
+    } catch (e) {
+      debugPrint('[PairedHomeView] Remote fetch skipped or offline: $e');
+      if (mounted) {
+        setState(() => _isLoadingMoments = false);
+      }
+    }
+  }
+
+  Future<void> _openTodayMomentsGrid() async {
+    final partnerName =
+        widget.user.partner?['display_name'] ?? widget.user.partner?['email'] ?? 'Partner';
+
+    // Combine both partners' today moments, deduplicate by id, sort strictly time DESC
+    final Map<String, UpdateModel> combinedMap = {};
+    for (final m in _receivedMoments) {
+      combinedMap[m.id] = m;
+    }
+    for (final m in _sentMoments) {
+      combinedMap[m.id] = m;
+    }
+
+    final combinedList = combinedMap.values.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    final updatedList = await Navigator.of(context).push<dynamic>(
+      MaterialPageRoute(
+        builder: (context) => TodayMomentsGridScreen(
+          moments: combinedList,
+          currentUserId: widget.user.id,
+          partnerName: partnerName,
+        ),
+      ),
+    );
+
+    if (updatedList is List<UpdateModel> && mounted) {
+      final nextReceived = updatedList
+          .where((m) => m.senderId != widget.user.id)
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      final nextSent = updatedList
+          .where((m) => m.senderId == widget.user.id)
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      setState(() {
+        _receivedMoments = nextReceived;
+        _sentMoments = nextSent;
+      });
+    }
+  }
+
+  Future<void> _requestPinWidget() async {
+    final success = await _widgetSyncService.requestPinWidget();
+    if (mounted) {
+      if (success) {
+        AppToast.success(context, 'Widget added to Home screen!');
+      } else {
+        AppToast.info(context, 'Press and hold your home screen to add the UpdateMe widget.');
+      }
+    }
+  }
+
+  Future<void> _captureAndSendUpdate() async {
+    if (_isOpeningCamera) return;
+
+    try {
+      setState(() => _isOpeningCamera = true);
+
+      final XFile? photo = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1080,
+        maxHeight: 1080,
+        imageQuality: 75,
+      );
+
+      if (photo != null && mounted) {
+        await SendUpdateModal.show(
+          context: context,
+          initialImage: File(photo.path),
+          onUpdateSent: () {
+            if (mounted) {
+              setState(() {
+                _selectedTabIndex = 1; // Switch to Sent Moments tab
+              });
+              _loadTodayMoments();
+            }
+          },
+        );
+        if (mounted) {
+          _loadTodayMoments();
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        AppToast.error(context, 'Unable to open camera: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isOpeningCamera = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final partnerName = widget.user.partner?['display_name'] ?? widget.user.partner?['email'] ?? 'Your Partner';
+    final currentList = _selectedTabIndex == 0 ? _receivedMoments : _sentMoments;
+    final emptyMessage = _selectedTabIndex == 0
+        ? 'No updates received from $partnerName yet today.'
+        : 'You haven’t sent any moments today yet.';
+
+    return Stack(
+      children: [
+        // Main Scrollable Area
+        RefreshIndicator(
+          onRefresh: () async {
+            if (mounted) {
+              setState(() => _isUserRefreshing = true);
+            }
+
+            // 1. Sequentially drain pending outbox queue
+            final syncResult = await SyncEngine().processQueue();
+
+            // 2. Run network revalidation along with a smooth minimum shimmer window (700ms)
+            await Future.wait([
+              _loadTodayMoments(),
+              Future.delayed(const Duration(milliseconds: 700)),
+            ]);
+
+            if (!mounted) return;
+            setState(() => _isUserRefreshing = false);
+
+            if (!context.mounted) return;
+            if (syncResult.syncedCount > 0) {
+              AppToast.success(
+                context,
+                'Synced ${syncResult.syncedCount} offline moment${syncResult.syncedCount > 1 ? 's' : ''} to partner.',
+              );
+            } else if (syncResult.isOffline) {
+              AppToast.info(context, 'You are currently offline. Moments are saved safely.');
+            }
+          },
+          color: AppColors.primaryAccent,
+          backgroundColor: AppColors.secondarySurface,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.only(left: 24.0, right: 24.0, top: 8.0, bottom: 120.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header Typography
+                Text(
+                  'Paired with\n$partnerName',
+                  style: const TextStyle(
+                    color: AppColors.textHighContrast,
+                    fontSize: 30,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.6,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 18),
+
+                // Standalone Pill Buttons (From Partner | Sent Moments | Today's Grid)
+                MomentsTabBar(
+                  selectedIndex: _selectedTabIndex,
+                  onTabSelected: (index) {
+                    setState(() => _selectedTabIndex = index);
+                  },
+                  onGridTap: _openTodayMomentsGrid,
+                ),
+                const SizedBox(height: 20),
+
+                // Layered Stacked Cards Deck with Ultra-Smooth Shimmer Skeleton Transition
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 320),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  child: (_isUserRefreshing || _isLoadingMoments)
+                      ? const DailyMomentSkeletonDeck(
+                          key: ValueKey('skeleton_deck'),
+                        )
+                      : DailyMomentsStackDeck(
+                          key: ValueKey('deck_${_selectedTabIndex}_${currentList.isNotEmpty ? currentList.first.id : "empty"}'),
+                          updates: currentList,
+                          emptyMessage: emptyMessage,
+                          currentUserId: widget.user.id,
+                          onUpdatesChanged: (updatedList) {
+                            if (!mounted) return;
+                            setState(() {
+                              if (_selectedTabIndex == 0) {
+                                _receivedMoments = updatedList;
+                              } else {
+                                _sentMoments = updatedList;
+                              }
+                            });
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // Floating Action Row (Add Widget on Left, Camera on Right)
+        Positioned(
+          bottom: 24,
+          left: 24,
+          right: 24,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              // Minimalist Pill: Add Widget
+              GestureDetector(
+                onTap: _requestPinWidget,
+                child: Container(
+                  height: 48,
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  decoration: BoxDecoration(
+                    color: AppColors.secondarySurface,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: AppColors.primaryAccent.withValues(alpha: 0.35),
+                      width: 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        blurRadius: 14,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'add widget',
+                      style: TextStyle(
+                        color: AppColors.textHighContrast,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // Pinned Bottom-Right Floating Camera Button
+              GestureDetector(
+                onTap: _isOpeningCamera ? null : _captureAndSendUpdate,
+                child: Container(
+                  width: 76,
+                  height: 76,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.primaryAccent,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.4),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                    border: Border.all(
+                      color: AppColors.secondarySurface,
+                      width: 4,
+                    ),
+                  ),
+                  child: Center(
+                    child: _isOpeningCamera
+                        ? const SizedBox(
+                            width: 26,
+                            height: 26,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              color: AppColors.textHighContrast,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.camera_alt_rounded,
+                            color: AppColors.textHighContrast,
+                            size: 36,
+                          ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
